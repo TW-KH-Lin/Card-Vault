@@ -1,0 +1,191 @@
+"use strict";
+
+const german = {
+  "POKÉMON TCG / COLLECTION TOOL": "POKÉMON-SAMMELKARTENSPIEL / SAMMLUNG",
+  "Personal collection files": "Persönliche Sammlungsdateien",
+  "Save the selected collection as a JSON file. Loading a file creates a separate collection.": "Speichere die ausgewählte Sammlung als JSON-Datei. Beim Laden einer Datei wird eine eigene Sammlung erstellt.",
+  "Personal collection": "Persönliche Sammlung",
+  "New collection name": "Name der neuen Sammlung",
+  "Create": "Erstellen",
+  "Save collection file": "Sammlung speichern",
+  "Load collection file": "Sammlung laden",
+  "COLLECTOR WORKSPACE": "DEIN SAMMLERBEREICH",
+  "Know your cards.": "Kenne deine Karten.",
+  "Know their value.": "Kenne ihren Wert.",
+  "Scan a Pokémon card to find its printing, check market prices, and save it to your collection.": "Scanne eine Pokémon-Karte, um ihre Ausgabe zu erkennen, Marktpreise zu prüfen und sie deiner Sammlung hinzuzufügen.",
+  "Card language": "Kartensprache",
+  "Used for photo scans and searches.": "Für Fotoscans und die Kartensuche.",
+  "Priority languages": "Bevorzugte Sprachen",
+  "English": "Englisch",
+  "Other languages": "Weitere Sprachen",
+  "日本語 · Japanese": "日本語 · Japanisch",
+  "Deutsch · German": "Deutsch",
+  "简体中文 · Simplified Chinese": "简体中文 · Chinesisch (vereinfacht)",
+  "繁體中文 · Traditional Chinese": "繁體中文 · Chinesisch (traditionell)",
+  "01 / IDENTIFY": "01 / ERKENNEN",
+  "Scan a card": "Karte scannen",
+  "ONE CARD AT A TIME": "EINE KARTE PRO FOTO",
+  "Your card photo": "Dein Kartenfoto",
+  "Open camera": "Kamera öffnen",
+  "Take photo": "Foto aufnehmen",
+  "Close camera": "Kamera schließen",
+  "Upload photo": "Foto hochladen",
+  "Fit one upright card inside the frame. The scanner compares the artwork and can also read printed details. Photos stay on your device.": "Richte eine einzelne Karte aufrecht im Rahmen aus. Der Scanner vergleicht das Kartenbild und kann auch den Aufdruck lesen. Die Fotos bleiben auf deinem Gerät.",
+  "02 / VERIFY & PRICE": "02 / PRÜFEN & BEWERTEN",
+  "Card lookup": "Kartensuche",
+  "Card name": "Kartenname",
+  "optional for photo scans": "bei Fotoscans optional",
+  "Collector number": "Kartennummer",
+  "optional": "optional",
+  "Find cards": "Karten suchen",
+  "Scan a card to see image matches, or search by its printed details.": "Scanne eine Karte für eine Bildsuche oder suche nach ihrem Aufdruck.",
+  "03 / ORGANIZE": "03 / VERWALTEN",
+  "Your collection": "Deine Sammlung",
+  "Collection views": "Sammlungsansichten",
+  "Collection": "Sammlung",
+  "Valuation": "Bewertung",
+  "Market value by set": "Marktwert nach Set",
+  "Refresh values": "Werte aktualisieren",
+  "Totals use one available quote per printing. Prices are in EUR. USD quotes use the latest published ECB rate. Cards without an available EUR estimate are counted separately.": "Für die Summe zählt je Ausgabe ein verfügbarer Referenzpreis. Alle Preise sind in EUR. USD-Preise werden mit dem zuletzt veröffentlichten EZB-Kurs umgerechnet. Karten ohne verfügbaren EUR-Schätzwert werden separat gezählt.",
+  "Edit a quantity and press Enter or leave the field to save.": "Ändere die Stückzahl und drücke die Eingabetaste oder verlasse das Feld, um zu speichern.",
+  "Card data via": "Kartendaten von",
+  "and": "und",
+  "Vintage card images via": "Bilder älterer Karten von",
+  "Collection stored in this browser": "Sammlung wird in diesem Browser gespeichert",
+  "Card Vault · Pokémon Collection": "Card Vault · Pokémon-Sammlung",
+  "Scan, price and catalog your Pokémon trading cards.": "Scanne und verwalte deine Pokémon-Sammelkarten und prüfe ihren Wert.",
+  "Interface language": "Sprache der Oberfläche",
+  "Pokédex No. {number}": "Pokédex-Nr. {number}",
+  "Unnumbered": "Ohne Kartennummer",
+  "Unknown": "Unbekannt",
+  "Image unavailable": "Bild nicht verfügbar",
+  "IMAGE MATCH": "BILDTREFFER",
+  "English reference image": "Englisches Referenzbild",
+  "English reference": "Englische Referenz",
+  "e.g. {example}": "z. B. {example}",
+  "Scan a photo or search by name in the selected language.": "Scanne ein Foto oder suche nach dem Kartennamen in der ausgewählten Sprache.",
+  "Artwork search covers selected sets. Other cards use printed details. Prices open in PikaQian.": "Die Bildsuche deckt ausgewählte Sets ab. Bei anderen Karten wird der Aufdruck ausgewertet. Preise werden in PikaQian geöffnet.",
+  "Enter the printed set code and number together, a card name, or scan a photo.": "Gib den aufgedruckten Set-Code und die Kartennummer zusammen oder den Kartennamen ein. Du kannst auch ein Foto scannen.",
+  "Enter a name or collector number, or scan a photo.": "Gib einen Kartennamen oder eine Kartennummer ein oder scanne ein Foto.",
+  "Searching the card catalogue…": "Kartendatenbank wird durchsucht …",
+  "Choose the matching printing to see market prices.": "Wähle die passende Ausgabe, um die Marktpreise zu sehen.",
+  "No matches. Check the spelling or try leaving the collector number blank.": "Keine Treffer. Prüfe die Schreibweise oder lass die Kartennummer frei.",
+  "The card catalogue is unavailable. Try again in a moment.": "Die Kartendatenbank ist gerade nicht verfügbar. Versuche es gleich noch einmal.",
+  "Align the full front of the card inside the guide, then take a photo.": "Richte die gesamte Kartenvorderseite im Rahmen aus und nimm ein Foto auf.",
+  "Camera access failed. Try allowing access in your browser, or upload a photo.": "Kein Kamerazugriff. Erlaube den Zugriff im Browser oder lade ein Foto hoch.",
+  "Checking printed details to refine the image matches…": "Der Aufdruck wird geprüft, um die Bildtreffer einzugrenzen …",
+  "Checking the printed card details…": "Der Kartenaufdruck wird geprüft …",
+  "Comparing card artwork. The first scan may take a moment…": "Kartenbilder werden verglichen. Der erste Scan kann einen Moment dauern …",
+  "No match found. Try a straight, close photo with less glare, or search by printed details.": "Kein Treffer. Versuche es mit einem geraden Foto aus der Nähe ohne Spiegelungen oder suche nach dem Aufdruck.",
+  "Compare the card images and collector numbers, then choose a printing.": "Vergleiche die Kartenbilder und Kartennummern und wähle die passende Ausgabe.",
+  "The photo could not be read or the catalogue did not respond. Try again or search manually.": "Das Foto konnte nicht gelesen werden oder die Kartendatenbank hat nicht geantwortet. Versuche es erneut oder suche manuell.",
+  "ECB FX {date}": "EZB-Kurs vom {date}",
+  "Price trend": "Preistrend",
+  "Market price": "Marktpreis",
+  "Set · {name}": "Set · {name}",
+  "Number · {number}": "Kartennummer · {number}",
+  "Checking price…": "Preis wird geprüft …",
+  "View {name} on Cardmarket": "{name} auf Cardmarket ansehen",
+  "Standard print": "Standardausgabe",
+  "Exchange rate unavailable": "Wechselkurs nicht verfügbar",
+  "See market listing": "Marktangebot ansehen",
+  "Price unavailable": "Preis nicht verfügbar",
+  "Checking exchange rate…": "Wechselkurs wird geprüft …",
+  "Unavailable": "Nicht verfügbar",
+  "Checking market prices…": "Marktpreise werden geprüft …",
+  "Check the printing and finish before adding the card.": "Prüfe Ausgabe und Oberfläche, bevor du die Karte hinzufügst.",
+  "Open full-size card image for {name}": "Bild von {name} in Originalgröße öffnen",
+  "Finish": "Oberfläche",
+  "Unspecified": "Nicht angegeben",
+  "Standard": "Standard",
+  "Holo": "Holo",
+  "Reverse holo": "Reverse-Holo",
+  "First edition": "Erste Auflage",
+  "First edition holo": "Erste Auflage (Holo)",
+  "Unlimited": "Unlimitierte Auflage",
+  "Unlimited holo": "Unlimitierte Auflage (Holo)",
+  "No rarity mark": "Ohne Seltenheitssymbol",
+  "Lenticular": "Lentikular",
+  "The Japanese Base Set guide price is for the standard printing. Confirm the rarity mark before using it.": "Der Richtpreis für das japanische Basis-Set gilt für die Standardausgabe. Prüfe zuerst das Seltenheitssymbol.",
+  "Dated Cardmarket guide price. Confirm the printing and condition on the listing.": "Cardmarket-Richtpreis zum angegebenen Datum. Prüfe im Angebot die Ausgabe und den Zustand.",
+  "These reference prices may come from a Japanese listing. Check the listing language, finish, and condition.": "Diese Referenzpreise können aus einem Angebot für japanische Karten stammen. Prüfe Sprache, Oberfläche und Zustand im Angebot.",
+  "Prices are for ungraded cards and may vary by condition, language, and edition.": "Die Preise gelten für Karten ohne Grading und können je nach Zustand, Sprache und Ausgabe variieren.",
+  "Quantity to add": "Stückzahl",
+  "Add to collection": "Zur Sammlung hinzufügen",
+  "Enter a whole quantity from 1 to 1,000,000.": "Gib eine ganze Zahl von 1 bis 1.000.000 ein.",
+  "This printing can have at most 1,000,000 copies in the collection.": "Die Sammlung kann höchstens 1.000.000 Exemplare dieser Ausgabe enthalten.",
+  "Added {qty} × {name} to {collection}.": "{qty} × {name} zu „{collection}“ hinzugefügt.",
+  "No verified price for this printing.": "Kein bestätigter Preis für diese Ausgabe.",
+  "Check prices on PikaQian ↗": "Preise auf PikaQian ansehen ↗",
+  "View on Cardmarket ↗": "Auf Cardmarket ansehen ↗",
+  "View this printing on Cardmarket ↗": "Diese Ausgabe auf Cardmarket ansehen ↗",
+  "View ANA Dragonite on Cardmarket ↗": "ANA-Dragoran auf Cardmarket ansehen ↗",
+  "Could not load this printing. Select it again to retry.": "Diese Ausgabe konnte nicht geladen werden. Wähle sie erneut aus.",
+  "This browser could not save the collection. Check that local storage is available.": "Der Browser konnte die Sammlung nicht speichern. Prüfe, ob der lokale Speicher verfügbar ist.",
+  "{count} CARD": "{count} KARTE",
+  "{count} CARDS": "{count} KARTEN",
+  "Your vault is empty. Scan or search for a card to start your collection.": "Deine Sammlung ist leer. Scanne oder suche eine Karte, um anzufangen.",
+  "Check price": "Preis prüfen",
+  "Remove one": "Ein Exemplar entfernen",
+  "Remove one {name}": "Ein Exemplar von {name} entfernen",
+  "Opened {name}.": "„{name}“ geöffnet.",
+  "The browser could not open this collection.": "Der Browser konnte diese Sammlung nicht öffnen.",
+  "Created {name}.": "„{name}“ erstellt.",
+  "The browser could not save the new collection.": "Der Browser konnte die neue Sammlung nicht speichern.",
+  "Download requested for {name}.": "Download für „{name}“ gestartet.",
+  "Imported {name} as a separate collection.": "„{name}“ als eigene Sammlung importiert.",
+  "Could not import this file. Choose a valid Card Vault collection file.": "Die Datei konnte nicht importiert werden. Wähle eine gültige Card-Vault-Sammlungsdatei.",
+  "No quoted value": "Kein Referenzpreis",
+  "Checking market quotes…": "Marktpreise werden abgerufen …",
+  "Add cards to see your collection value.": "Füge Karten hinzu, um den Wert deiner Sammlung zu sehen.",
+  "{count} cards without a quote": "Karten ohne Referenzpreis: {count}",
+  "Card": "Karte",
+  "Qty": "Anzahl",
+  "Unit price": "Stückpreis",
+  "Subtotal": "Zwischensumme",
+  "Source / Date": "Quelle / Datum",
+  "Actions": "Aktionen",
+  "Quantity for {name}": "Stückzahl für {name}",
+  "The browser could not save the quantity.": "Der Browser konnte die Stückzahl nicht speichern.",
+  "Saved quantity for {name}.": "Stückzahl für {name} gespeichert.",
+  "Remove": "Entfernen",
+  "Remove all copies of {name} from this collection": "Alle Exemplare von {name} aus dieser Sammlung entfernen",
+  "Remove this row and all its copies": "Diese Zeile und alle ihre Exemplare entfernen",
+  "Removed {name} from {collection}.": "{name} aus „{collection}“ entfernt.",
+  "The browser could not remove this row.": "Der Browser konnte diese Zeile nicht entfernen.",
+  "Browser storage is unavailable.": "Der Browserspeicher ist nicht verfügbar.",
+  "My collection": "Meine Sammlung"
+};
+
+const interfaceLanguageKey = "card-vault-interface-language";
+const interfaceLanguage = (() => {
+  const selected = new URL(location.href).searchParams.get("ui");
+  if (selected === "en" || selected === "de") return selected;
+  try { return localStorage.getItem(interfaceLanguageKey) === "de" ? "de" : "en"; }
+  catch { return "en"; }
+})();
+
+function t(message, values = {}) {
+  const template = interfaceLanguage === "de" && Object.hasOwn(german, message) ? german[message] : message;
+  return template.replace(/\{(\w+)\}/g, (placeholder, key) => values[key] ?? placeholder);
+}
+
+document.documentElement.lang = interfaceLanguage;
+for (const node of document.querySelectorAll("[data-i18n]")) {
+  node.textContent = t(node.textContent.trim());
+}
+for (const attribute of ["aria-label", "alt", "content", "label"]) {
+  for (const node of document.querySelectorAll("[data-i18n-" + attribute + "]")) {
+    node.setAttribute(attribute, t(node.getAttribute(attribute)));
+  }
+}
+
+const interfacePicker = document.getElementById("interface-language");
+interfacePicker.value = interfaceLanguage;
+interfacePicker.addEventListener("change", () => {
+  const selected = interfacePicker.value;
+  try { localStorage.setItem(interfaceLanguageKey, selected); } catch {}
+  const url = new URL(location.href);
+  url.searchParams.set("ui", selected);
+  location.replace(url);
+});
