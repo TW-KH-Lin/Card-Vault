@@ -43,7 +43,8 @@ function image(card, quality = "low") {
   const tcgdexImage = card.image.startsWith("https://assets.tcgdex.net/");
   const vintageImage = card.image.startsWith("https://img.japanesepokecards.com/") ||
     card.image.startsWith("https://vintagecardorigins.com/img/");
-  if (!tcgdexImage && !vintageImage && !referenceImages.has(card.image) && !card.image.startsWith("https://tcg.mik.moe/static/img/")) return null;
+  const deckImage = /^https:\/\/pokecardex-scans\.b-cdn\.net\/sets_jp\/(?:PESD|MCMP|MCVS5)\/\d+\.jpg$/.test(card.image);
+  if (!tcgdexImage && !vintageImage && !deckImage && !referenceImages.has(card.image) && !card.image.startsWith("https://tcg.mik.moe/static/img/")) return null;
   const img = element("img");
   img.src = tcgdexImage ? card.image + "/" + quality + ".webp" : card.image;
   img.alt = card.name;
@@ -67,7 +68,7 @@ function mergeReferences(cards, references) {
 async function referencesFor(language) {
   const references = cardReferences[language] || [];
   if (language !== "ja") return references;
-  vintageReferences ??= fetch("visual/ja-vintage.json?v=1", { signal: AbortSignal.timeout(12000) }).then(response => {
+  vintageReferences ??= fetch("visual/ja-vintage.json?v=2", { signal: AbortSignal.timeout(12000) }).then(response => {
     if (!response.ok) throw new Error("Vintage catalogue unavailable");
     return response.json();
   });
