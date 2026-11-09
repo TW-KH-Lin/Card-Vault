@@ -338,6 +338,11 @@ $("camera").addEventListener("click", async () => {
 });
 
 $("stop").addEventListener("click", stopCamera);
+const scanPanel = $("scan-title").closest("details");
+const lookupPanel = $("lookup-title").closest("details");
+scanPanel.addEventListener("toggle", () => {
+  if (!scanPanel.open && (stream || $("camera").disabled)) stopCamera();
+});
 window.addEventListener("pagehide", stopCamera);
 $("capture").addEventListener("click", () => {
   const video = $("video");
@@ -510,6 +515,7 @@ async function scan(blob) {
     }
     $("scan-progress").hidden = true;
     showMatches(candidates, language, t("Compare the card images and collector numbers, then choose a printing."));
+    lookupPanel.open = true;
     if (matchMedia("(max-width: 680px)").matches) $("lookup-title").scrollIntoView({ block: "start" });
   } catch {
     if (request === active) scanStatus(t("The photo could not be read or the catalogue did not respond. Try again or search manually."));
@@ -831,6 +837,7 @@ function renderCollection() {
     const view = element("button", t("Check price"));
     view.addEventListener("click", () => {
       showMatches([], item.language, t("Checking market prices…"));
+      lookupPanel.open = true;
       $("lookup-title").scrollIntoView({ block: "start" });
       showCard(item.id, item.language, item.variant);
     });

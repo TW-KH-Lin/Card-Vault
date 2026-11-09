@@ -47,3 +47,14 @@
 .interface-picker label{margin:0;font-size:.75rem}
 .interface-picker select{width:auto;padding:6px 8px}
 @media(max-width:420px){.interface-picker{align-items:flex-start;flex-direction:column;gap:2px}}
+
+.foldable > summary{display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer;list-style:none}
+.foldable > summary::-webkit-details-marker{display:none}
+.foldable > summary::after{content:"";width:8px;height:8px;border:solid var(--accent);border-width:0 2px 2px 0;transform:rotate(-45deg);flex:none;margin-right:4px}
+.foldable[open] > summary::after{transform:rotate(45deg)}
+.foldable > summary:focus-visible{outline:2px solid var(--accent);outline-offset:5px}
+.foldable > summary h2{margin:0}
+.foldable > summary .eyebrow{display:block;margin-bottom:5px}
+.foldable[open] > summary{margin-bottom:16px}
+.language-panel{margin-bottom:18px}
+.language-panel .language-picker{border:0;margin:0;padding:0;background:transparent}
