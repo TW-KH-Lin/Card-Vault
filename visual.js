@@ -20,7 +20,7 @@ const visualSearch = (() => {
     if (!indexes.has(language)) {
       const request = (async () => {
         const responses = await Promise.all(["json", "bin"].map(extension =>
-          fetch("visual/" + language + "." + extension + "?v=1", { signal: AbortSignal.timeout(15000) })));
+          fetch("visual/" + language + "." + extension + (language === "zh-cn" ? "?v=2" : "?v=1"), { signal: AbortSignal.timeout(15000) })));
         if (responses.some(response => !response.ok)) throw new Error("Image index unavailable");
         const [ids, bytes] = await Promise.all([responses[0].json(), responses[1].arrayBuffer()]);
         if (bytes.byteLength !== ids.length * size) throw new Error("Invalid image index");
@@ -185,7 +185,7 @@ const visualSearch = (() => {
     for (const fraction of [.65, .70, .75, .80]) {
       const crop = centerCrop(image, fraction);
       for (const dx of [-.035, 0, .035]) {
-        for (const dy of [-.035, 0, .035]) {
+        for (const dy of [-.07, -.035, 0, .035]) {
           add({ ...crop, x: crop.x + image.width * dx, y: crop.y + image.height * dy }, 2);
         }
       }

@@ -82,7 +82,7 @@ async function referencesFor(language) {
 function catalogue(language) {
   if (!catalogues.has(language)) {
     const request = language === "zh-cn"
-      ? fetch("visual/zh-cn-cards.json?v=1", { signal: AbortSignal.timeout(12000) }).then(response => {
+      ? fetch("visual/zh-cn-cards.json?v=2", { signal: AbortSignal.timeout(12000) }).then(response => {
         if (!response.ok) throw new Error("Image catalogue unavailable");
         return response.json();
       })
@@ -128,6 +128,8 @@ async function findCard(language, id) {
     });
     return reference ? { ...card, ...reference, set: card.set || reference.set } : card;
   }
+  const local = (await catalogue(language).catch(() => [])).find(card => card.id === id && card.localOnly);
+  if (local) return local;
   const separator = id.lastIndexOf("-");
   const card = await crystRequest("card-detail", { setCode: id.slice(0, separator), cardIndex: id.slice(separator + 1) });
   return crystCard(card);
@@ -151,14 +153,20 @@ function normalizedNumber(value) {
 
 async function findCards(language, name, number) {
   if (language === "zh-cn") {
+    const needle = clean(name);
+    const local = (await catalogue(language).catch(() => [])).filter(card => card.localOnly &&
+      [card.name, card.nameEn].some(value => clean(value || "").includes(needle)));
     const body = { searchText: name, exact: false, unique: false, page: 1, pageSize: 100 };
-    const result = await crystRequest("card-basic-search", body);
+    const result = await crystRequest("card-basic-search", body).catch(error => {
+      if (!local.length) throw error;
+      return { list: [], pageNum: 0 };
+    });
     let cards = result.list.map(crystCard);
     while (number && !cards.some(card => matchNumber(card, number)) && body.page < result.pageNum) {
       const next = await crystRequest("card-basic-search", { ...body, page: ++body.page });
       cards = cards.concat(next.list.map(crystCard));
     }
-    return cards;
+    return mergeReferences(cards, local);
   }
   const query = new URLSearchParams({ name: name.replace(/[|:]/g, " "), "pagination:itemsPerPage": "100" });
   const needle = clean(name);
@@ -456,7 +464,9 @@ async function scanCandidates(canvas, language, request) {
     return references;
   })).filter(card => !card.image?.includes("/tcgp/"));
   const imageMatches = cards.length ? await visualSearch.search(canvas, language, cards).catch(() => []) : [];
-  const images = language === "zh-cn" ? imageMatches.filter(match => match.distance <= 16) : imageMatches;
+  const images = language === "zh-cn"
+    ? imageMatches.filter(({ card, distance }) => distance <= (card.set?.id === "CBB4C" ? 24 : 16))
+    : imageMatches;
   if (request !== active) return [];
   const visualCards = images.map(({ card }) => ({ ...card, visualMatch: true }));
   const decisive = images[0]?.distance < 12 && (!images[1] || images[1].distance - images[0].distance > 3);
