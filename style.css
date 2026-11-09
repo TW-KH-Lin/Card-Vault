@@ -6,8 +6,9 @@
 .language-picker small{color:var(--muted);font-size:13px}
 .language-picker select{width:auto;max-width:100%;flex:0 1 245px}
 
+.viewfinder video,.viewfinder #photo{position:absolute;inset:0;display:block}
 .viewfinder video{object-fit:cover}
-#guide{position:absolute;top:50%;left:50%;height:82%;aspect-ratio:63/88;transform:translate(-50%,-50%);border:2px dashed var(--accent);border-radius:10px;box-shadow:0 0 0 1200px #0d170e63;pointer-events:none}
+#guide{position:absolute;z-index:1;top:50%;left:50%;height:82%;aspect-ratio:63/88;transform:translate(-50%,-50%);border:2px dashed var(--accent);border-radius:10px;box-shadow:0 0 0 1200px #0d170e63;pointer-events:none}
 #results{grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:9px;max-height:480px;padding:3px}
 .match{flex-direction:column;align-items:stretch;justify-content:flex-start;gap:6px;padding:8px;min-width:0;overflow-wrap:anywhere}
 .match .artwork{aspect-ratio:63/88;background:#101913;border-radius:5px;display:grid;place-items:center;overflow:hidden}
