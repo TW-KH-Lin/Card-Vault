@@ -68,7 +68,7 @@ function mergeReferences(cards, references) {
 async function referencesFor(language) {
   const references = cardReferences[language] || [];
   if (language !== "ja") return references;
-  vintageReferences ??= fetch("visual/ja-vintage.json?v=2", { signal: AbortSignal.timeout(12000) }).then(response => {
+  vintageReferences ??= fetch("visual/ja-vintage.json?v=3", { signal: AbortSignal.timeout(12000) }).then(response => {
     if (!response.ok) throw new Error("Vintage catalogue unavailable");
     return response.json();
   });
@@ -198,11 +198,17 @@ function cardNumberLabel(card) {
   return "#" + card.localId + (total ? "/" + total : "");
 }
 
+const japaneseSetCode = /^(?:XY|EBB|SC|CP[1-6]|sm2\+|(?:BW|XY|SM|SV|S|M)(?:\d[\w.+]*|-[Pp]|[A-Z]{1,3}))$/;
+
+function cardSetId(card) {
+  return card.set?.id || card.id.slice(0, -(String(card.localId).length + 1));
+}
+
 function cardSetLabel(card) {
-  if (typeof card.set === "string") return card.set || t("Unknown");
-  const setId = card.set?.id || card.id.slice(0, -(String(card.localId).length + 1));
-  const setName = card.set?.name;
-  return setName || setId;
+  const setId = cardSetId(card);
+  const setName = typeof card.set === "string" ? card.set : card.set?.name;
+  if (!setName) return setId || t("Unknown");
+  return japaneseSetCode.test(setId) ? setName + " · " + setId : setName;
 }
 
 async function showMatches(cards, language, message) {
@@ -249,7 +255,7 @@ async function showMatches(cards, language, message) {
 function updateCardLanguageHelp() {
   const language = $("language").value;
   $("name").placeholder = t("e.g. {example}", { example: nameExamples[language] || "Charizard" });
-  $("number").placeholder = t("e.g. {example}", { example: language === "zh-cn" ? "CSV9C 245" : "4/102" });
+  $("number").placeholder = t("e.g. {example}", { example: language === "zh-cn" ? "CSV9C 245" : language === "ja" ? "SV2a 025/165" : "4/102" });
   $("language-help").textContent = language === "zh-cn"
     ? t("Artwork search covers selected sets. Other cards use printed details. Prices open in PikaQian.")
     : t("Used for photo scans and searches.");
@@ -288,8 +294,13 @@ $("search").addEventListener("submit", async event => {
       const [, setCode, localId] = setAndNumber;
       cards = [await findCard(language, setCode + "-" + localId)];
     } else {
-      cards = name ? await findCards(language, name, number) : await catalogue(language);
-      if (number) cards = cards.filter(card => matchNumber(card, number) ||
+      const japaneseNumber = language === "ja" && number.match(/^([A-Z0-9.+-]+)[\s-]+(\d+[A-Z]?)$/i);
+      cards = name ? await findCards(language, name, japaneseNumber?.[2] || number) : await catalogue(language);
+      if (japaneseNumber) {
+        const [, setCode, localId] = japaneseNumber;
+        cards = cards.filter(card => cardSetId(card).toUpperCase() === setCode.toUpperCase() &&
+          matchNumber(card, localId) && (!total || !card.printedNumber || matchTotal(card, total)));
+      } else if (number) cards = cards.filter(card => matchNumber(card, number) ||
         (!total && card.pokedexNumber && normalizedNumber(card.pokedexNumber) === normalizedNumber(number.replace(/^No\.?\s*/i, ""))));
     }
     if (total && cards.length > 1 && language !== "zh-cn") {
