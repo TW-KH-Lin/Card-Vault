@@ -463,7 +463,15 @@ async function scanCandidates(canvas, language, request) {
   if (decisive) return visualCards;
 
   scanStatus(visualCards.length ? t("Checking printed details to refine the image matches…") : t("Checking the printed card details…"));
-  const { matches, numbers } = await readPrintedDetails(canvas, language, cards).catch(() => ({ matches: [], numbers: [] }));
+  const emptyDetails = { matches: [], numbers: [] };
+  const printedDetails = readPrintedDetails(canvas, language, cards).catch(() => emptyDetails);
+  let deadline;
+  const { matches, numbers } = await (visualCards.length
+    ? Promise.race([
+      printedDetails,
+      new Promise(resolve => { deadline = setTimeout(() => resolve(emptyDetails), 4000); })
+    ]).finally(() => clearTimeout(deadline))
+    : printedDetails);
   if (request !== active) return [];
   const visualIds = new Set(visualCards.map(card => card.id));
   if (images.length) {

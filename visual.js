@@ -37,7 +37,7 @@ const visualSearch = (() => {
 
   function describe(pixels, offset, channels, output = new Int16Array(size)) {
     const start = output.length === size ? 0 : offset;
-    let mean = 0;
+    let mean = 0, redMean = 0, blueMean = 0;
     for (let index = 0; index < weights.length; index++) {
       const src = offset + index * channels;
       const dest = start + index * 3;
@@ -47,9 +47,17 @@ const visualSearch = (() => {
       output[dest + 1] = red - luma;
       output[dest + 2] = blue - luma;
       mean += luma * weights[index];
+      redMean += output[dest + 1] * weights[index];
+      blueMean += output[dest + 2] * weights[index];
     }
     mean = Math.round(mean / weightTotal);
-    for (let i = start; i < start + size; i += 3) output[i] -= mean;
+    redMean = Math.round(redMean / weightTotal);
+    blueMean = Math.round(blueMean / weightTotal);
+    for (let i = start; i < start + size; i += 3) {
+      output[i] -= mean;
+      output[i + 1] -= redMean;
+      output[i + 2] -= blueMean;
+    }
     return output;
   }
 
@@ -60,7 +68,7 @@ const visualSearch = (() => {
       const pos = index * 3;
       const ref = offset + pos;
       total += weights[index] * (
-        Math.abs(query[pos] - reference[ref]) +
+        0.7 * Math.abs(query[pos] - reference[ref]) +
         .45 * Math.abs(query[pos + 1] - reference[ref + 1]) +
         .40 * Math.abs(query[pos + 2] - reference[ref + 2])
       );
@@ -125,25 +133,63 @@ const visualSearch = (() => {
   }
 
   function queryDescriptors(image) {
+    // Average each fingerprint cell over its area. Canvas interpolation alone
+    // can miss artwork detail when reducing a large phone photo to 10 × 14.
     const sample = document.createElement("canvas");
-    sample.width = width;
-    sample.height = height;
+    const scale = Math.min(1, 360 / Math.max(image.width, image.height));
+    sample.width = Math.max(1, Math.round(image.width * scale));
+    sample.height = Math.max(1, Math.round(image.height * scale));
     const ctx = sample.getContext("2d", { willReadFrequently: true });
     ctx.imageSmoothingQuality = "high";
+    ctx.fillStyle = "#888";
+    ctx.fillRect(0, 0, sample.width, sample.height);
+    ctx.drawImage(image, 0, 0, sample.width, sample.height);
+    const { data } = ctx.getImageData(0, 0, sample.width, sample.height);
+    const scaleX = sample.width / image.width;
+    const scaleY = sample.height / image.height;
     const query = [];
-    const add = (source, crop, penalty) => {
-      ctx.fillStyle = "#888";
-      ctx.fillRect(0, 0, width, height);
-      ctx.drawImage(source, crop.x, crop.y, crop.width, crop.height, 0, 0, width, height);
-      const signature = describe(ctx.getImageData(0, 0, width, height).data, 0, 4);
+    const add = (crop, penalty) => {
+      const pixels = new Uint8ClampedArray(size);
+      for (let row = 0; row < height; row++) {
+        const top = Math.floor((crop.y + row * crop.height / height) * scaleY);
+        const bottom = Math.min(sample.height, Math.ceil((crop.y + (row + 1) * crop.height / height) * scaleY));
+        for (let column = 0; column < width; column++) {
+          const left = Math.floor((crop.x + column * crop.width / width) * scaleX);
+          const right = Math.min(sample.width, Math.ceil((crop.x + (column + 1) * crop.width / width) * scaleX));
+          let red = 0, green = 0, blue = 0;
+          for (let y = top; y < bottom; y++) {
+            for (let x = left; x < right; x++) {
+              const offset = (y * sample.width + x) * 4;
+              red += data[offset];
+              green += data[offset + 1];
+              blue += data[offset + 2];
+            }
+          }
+          const count = (bottom - top) * (right - left);
+          const index = (row * width + column) * 3;
+          pixels[index] = red / count;
+          pixels[index + 1] = green / count;
+          pixels[index + 2] = blue / count;
+        }
+      }
+      const signature = describe(pixels, 0, 3);
       let contrast = 0;
       for (let i = 0; i < signature.length; i += 3) contrast += Math.abs(signature[i]);
       if (contrast / weights.length >= 8) query.push({ signature, penalty });
     };
     const full = { x: 0, y: 0, width: image.width, height: image.height };
-    if (Math.abs(image.width / image.height - ratio) < .11) add(image, full, 0);
-    for (const fraction of [1, .88, .75, .62]) add(image, centerCrop(image, fraction), 1 + (1 - fraction) * 2);
-    for (const crop of edgeCrops(image)) add(image, crop, 2);
+    if (Math.abs(image.width / image.height - ratio) < .11) add(full, 0);
+    for (const fraction of [1, .88, .75, .62]) add(centerCrop(image, fraction), 1 + (1 - fraction) * 2);
+    for (const crop of edgeCrops(image)) add(crop, 2);
+    // Holders and surrounding surfaces can obscure the card edges.
+    for (const fraction of [.65, .70, .75, .80]) {
+      const crop = centerCrop(image, fraction);
+      for (const dx of [-.035, 0, .035]) {
+        for (const dy of [-.035, 0, .035]) {
+          add({ ...crop, x: crop.x + image.width * dx, y: crop.y + image.height * dy }, 2);
+        }
+      }
+    }
     // On graded slabs the label is above the card, so a centered crop often cuts it off.
     if (image.width / image.height < .66) {
       for (const fraction of [.74, .81, .88]) {
@@ -152,7 +198,7 @@ const visualSearch = (() => {
         for (const center of [.58, .61, .64]) {
           const y = image.height * center - cropHeight / 2;
           if (y < 0 || y + cropHeight > image.height) continue;
-          add(image, { x: (image.width - cropWidth) / 2, y, width: cropWidth, height: cropHeight }, 2);
+          add({ x: (image.width - cropWidth) / 2, y, width: cropWidth, height: cropHeight }, 2);
         }
       }
     }
