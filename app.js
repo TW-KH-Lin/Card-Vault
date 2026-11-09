@@ -82,7 +82,7 @@ async function referencesFor(language) {
 function catalogue(language) {
   if (!catalogues.has(language)) {
     const request = language === "zh-cn"
-      ? fetch("visual/zh-cn-cards.json?v=2", { signal: AbortSignal.timeout(12000) }).then(response => {
+      ? fetch("visual/zh-cn-cards.json?v=3", { signal: AbortSignal.timeout(12000) }).then(response => {
         if (!response.ok) throw new Error("Image catalogue unavailable");
         return response.json();
       })
@@ -419,8 +419,12 @@ function readMatches(cards, text, printedNumbers) {
   }).sort((a, b) => b.score - a.score);
 }
 
-async function readSimplifiedChinese(text, numbers) {
+async function readSimplifiedChinese(text, numbers, cards) {
   const codes = [...new Set(setCodes(text))].filter(code => /^(?:C(?:S|B)[A-Z0-9.]+|151C|30TH[A-Z]*C|(?:SM|SV|S|M)-?P)$/.test(code));
+  const gemMatches = cards.filter(card => /^CBB[1-7]C$/.test(card.set?.id) &&
+    codes.includes(card.set.id) && numbers.some(([, number, total]) => card.printedNumber === number + "/" + total));
+  if (gemMatches.length === 1) return [{ card: gemMatches[0], score: 420 }];
+
   if (codes.length === 1 && numbers.length === 1) {
     try {
       const card = await findCard("zh-cn", codes[0] + "-" + numbers[0][1]);
@@ -447,9 +451,12 @@ async function readPrintedDetails(canvas, language, cards) {
     await worker.setParameters({ tessedit_pageseg_mode: tesseract.PSM.SPARSE_TEXT });
     const { data } = await worker.recognize(canvas);
     const text = data.text.normalize("NFKC");
-    const numbers = [...text.matchAll(/\b([A-Z]{0,4}\d{1,4}[A-Z]?)\s*\/\s*(\d{2,4})\b/gi)];
+    const numberText = language === "zh-cn" && /\bCBB[1-7]C\b/i.test(text)
+      ? text.replace(/\b(\d{2})[^\S\r\n]+(\d{2})(?=\s*\/\s*\d{2}\b)/g, "$1$2")
+      : text;
+    const numbers = [...numberText.matchAll(/\b([A-Z]{0,4}\d{1,4}[A-Z]?)\s*\/\s*(\d{2,4})\b/gi)];
     const matches = language === "zh-cn"
-      ? await readSimplifiedChinese(text, numbers)
+      ? await readSimplifiedChinese(text, numbers, cards)
       : readMatches(cards, text, numbers);
     return { matches, numbers };
   } finally {
@@ -465,7 +472,7 @@ async function scanCandidates(canvas, language, request) {
   })).filter(card => !card.image?.includes("/tcgp/"));
   const imageMatches = cards.length ? await visualSearch.search(canvas, language, cards).catch(() => []) : [];
   const images = language === "zh-cn"
-    ? imageMatches.filter(({ card, distance }) => distance <= (card.set?.id === "CBB4C" ? 24 : 16))
+    ? imageMatches.filter(({ card, distance }) => distance <= (/^CBB[1-7]C$/.test(card.set?.id) ? 24 : 16))
     : imageMatches;
   if (request !== active) return [];
   const visualCards = images.map(({ card }) => ({ ...card, visualMatch: true }));
