@@ -43,8 +43,9 @@ function image(card, quality = "low") {
   const tcgdexImage = card.image.startsWith("https://assets.tcgdex.net/");
   const vintageImage = card.image.startsWith("https://img.japanesepokecards.com/") ||
     card.image.startsWith("https://vintagecardorigins.com/img/");
+  const correctedFront = /^visual\/fronts\/[A-Za-z0-9-]+\.webp$/.test(card.image);
   const deckImage = /^https:\/\/pokecardex-scans\.b-cdn\.net\/sets_jp\/(?:PESD|MCMP|MCVS5)\/\d+\.jpg$/.test(card.image);
-  if (!tcgdexImage && !vintageImage && !deckImage && !referenceImages.has(card.image) && !card.image.startsWith("https://tcg.mik.moe/static/img/")) return null;
+  if (!tcgdexImage && !vintageImage && !correctedFront && !deckImage && !referenceImages.has(card.image) && !card.image.startsWith("https://tcg.mik.moe/static/img/")) return null;
   const img = element("img");
   img.src = tcgdexImage ? card.image + "/" + quality + ".webp" : card.image;
   img.alt = card.name;
@@ -68,7 +69,7 @@ function mergeReferences(cards, references) {
 async function referencesFor(language) {
   const references = cardReferences[language] || [];
   if (language !== "ja") return references;
-  vintageReferences ??= fetch("visual/ja-vintage.json?v=7", { signal: AbortSignal.timeout(12000) }).then(response => {
+  vintageReferences ??= fetch("visual/ja-vintage.json?v=8", { signal: AbortSignal.timeout(12000) }).then(response => {
     if (!response.ok) throw new Error("Vintage catalogue unavailable");
     return response.json();
   });
@@ -186,6 +187,14 @@ function matchNumber(card, number) {
     (card.printedNumber && normalizedNumber(card.printedNumber.split("/")[0]) === localId);
 }
 
+function promoSeries(code) {
+  return /^(?:[A-Z]{1,4}-P|P|J|T|PLAY)$/i.test(code || "");
+}
+
+function matchesPromoSeries(card, code) {
+  return card.printedNumber?.split("/")[1]?.toUpperCase() === code.toUpperCase();
+}
+
 function matchTotal(card, total, set = card.set) {
   return Number(card.printedNumber?.split("/")[1] || set?.cardCount?.official) === Number(total);
 }
@@ -298,12 +307,15 @@ $("search").addEventListener("submit", async event => {
       cards = name ? await findCards(language, name, japaneseNumber?.[2] || number) : await catalogue(language);
       if (japaneseNumber) {
         const [, setCode, localId] = japaneseNumber;
-        cards = cards.filter(card => cardSetId(card).toUpperCase() === setCode.toUpperCase() &&
+        cards = cards.filter(card => (cardSetId(card).toUpperCase() === setCode.toUpperCase() ||
+          (promoSeries(setCode) && matchesPromoSeries(card, setCode))) &&
           matchNumber(card, localId) && (!total || !card.printedNumber || matchTotal(card, total)));
       } else if (number) cards = cards.filter(card => matchNumber(card, number) ||
         (!total && card.pokedexNumber && normalizedNumber(card.pokedexNumber) === normalizedNumber(number.replace(/^No\.?\s*/i, ""))));
     }
-    if (total && cards.length > 1 && language !== "zh-cn") {
+    if (language === "ja" && promoSeries(total)) {
+      cards = cards.filter(card => matchesPromoSeries(card, total));
+    } else if (total && cards.length > 1 && language !== "zh-cn") {
       const sets = await api(language, "/sets").catch(() => []);
       const byId = new Map(sets.map(set => [set.id, set]));
       cards = cards.map(card => ({ ...card, set: card.set || byId.get(card.id.slice(0, -(String(card.localId).length + 1))) }));
@@ -423,7 +435,10 @@ function readMatches(cards, text, printedNumbers) {
     const pattern = cjk ? null : new RegExp("(?:^| )" + name + "(?: |$)");
     const hasName = (value, index) => cjk ? compactLines[index].includes(compactName) : pattern.test(value);
     const line = header.findIndex(hasName);
-    const exactNumber = printedNumbers.some(value => matchNumber(card, value[1]));
+    const exactPromo = printedNumbers.some(([, number, code]) =>
+      promoSeries(code) && matchesPromoSeries(card, code) && matchNumber(card, number));
+    if (exactPromo) return [{ card, score: 450 }];
+    const exactNumber = printedNumbers.some(([, number, total]) => !promoSeries(total) && matchNumber(card, number));
     if (line < 0 && !(exactNumber && lines.some(hasName))) return [];
     const setCode = card.id.slice(0, -(String(card.localId).length + 1)).toUpperCase();
     const exactSet = cjk && exactNumber && tokens.has(setCode);
@@ -467,6 +482,11 @@ async function readPrintedDetails(canvas, language, cards) {
       ? text.replace(/\b(\d{2})[^\S\r\n]+(\d{2})(?=\s*\/\s*\d{2}\b)/g, "$1$2")
       : text;
     const numbers = [...numberText.matchAll(/\b([A-Z]{0,4}\d{1,4}[A-Z]?)\s*\/\s*(\d{2,4})\b/gi)];
+    if (language === "ja") {
+      for (const [full, number, code] of text.matchAll(/\b(\d{1,4})\s*\/\s*([A-Z]{1,4}\s*[-–−]\s*P|PLAY|P|J|T)\b/gi)) {
+        numbers.push([full, number, code.replace(/[–−]/g, "-").replace(/\s/g, "").toUpperCase()]);
+      }
+    }
     const matches = language === "zh-cn"
       ? await readSimplifiedChinese(text, numbers, cards)
       : readMatches(cards, text, numbers);
@@ -508,7 +528,8 @@ async function scanCandidates(canvas, language, request) {
     const combined = visualCards.map((card, index) => ({
       card,
       rank: images[index].distance - (printedScores.get(card.id) || 0) / 60 -
-        (numbers.some(number => matchNumber(card, number[1])) ? 2 : 0)
+        (numbers.some(([, number, code]) => matchNumber(card, number) &&
+          (!promoSeries(code) || matchesPromoSeries(card, code))) ? 2 : 0)
     })).sort((a, b) => a.rank - b.rank).map(item => item.card);
     const textOnly = matches.filter(({ card }) => !visualIds.has(card.id)).slice(0, 3).map(({ card }) => card);
     return [...combined, ...textOnly];

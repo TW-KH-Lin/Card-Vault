@@ -20,7 +20,7 @@ const visualSearch = (() => {
     if (!indexes.has(language)) {
       const request = (async () => {
         const responses = await Promise.all(["json", "bin"].map(extension =>
-          fetch("visual/" + language + "." + extension + (language === "zh-cn" ? "?v=3" : language === "ja" ? "?v=2" : "?v=1"), { signal: AbortSignal.timeout(15000) })));
+          fetch("visual/" + language + "." + extension + (language === "zh-cn" ? "?v=3" : language === "ja" ? "?v=3" : "?v=1"), { signal: AbortSignal.timeout(15000) })));
         if (responses.some(response => !response.ok)) throw new Error("Image index unavailable");
         const [ids, bytes] = await Promise.all([responses[0].json(), responses[1].arrayBuffer()]);
         if (bytes.byteLength !== ids.length * size) throw new Error("Invalid image index");
