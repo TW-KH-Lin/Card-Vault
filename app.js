@@ -68,7 +68,7 @@ function mergeReferences(cards, references) {
 async function referencesFor(language) {
   const references = cardReferences[language] || [];
   if (language !== "ja") return references;
-  vintageReferences ??= fetch("visual/ja-vintage.json?v=3", { signal: AbortSignal.timeout(12000) }).then(response => {
+  vintageReferences ??= fetch("visual/ja-vintage.json?v=4", { signal: AbortSignal.timeout(12000) }).then(response => {
     if (!response.ok) throw new Error("Vintage catalogue unavailable");
     return response.json();
   });
@@ -613,6 +613,11 @@ function marketLink(card) {
   return null;
 }
 
+function marketSearchLink(card) {
+  return "https://www.cardmarket.com/en/Pokemon/Products/Search?" +
+    new URLSearchParams({ searchString: card.nameEn || card.name });
+}
+
 function summaryMarketLink() {
   const link = element("a", "Cardmarket ↗", "summary-market");
   link.target = "_blank";
@@ -664,10 +669,16 @@ function cardFacts(card, language, selectedVariant, externalLink) {
   const render = async detail => {
     set.textContent = t("Set · {name}", { name: cardSetLabel(detail) });
     number.textContent = t("Number · {number}", { number: cardNumberLabel(detail) });
-    const href = selectedVariant !== "noRarity" && marketLink(detail);
-    if (href && href.startsWith("https://www.cardmarket.com/")) {
+    const href = selectedVariant === "noRarity" ? null : marketLink(detail);
+    if (href?.startsWith("https://www.cardmarket.com/")) {
       link.href = href;
+      link.textContent = "Cardmarket ↗";
       link.setAttribute("aria-label", t("View {name} on Cardmarket", { name: detail.name }));
+      link.hidden = false;
+    } else if (language !== "zh-cn") {
+      link.href = marketSearchLink(detail);
+      link.textContent = t("Search Cardmarket ↗");
+      link.removeAttribute("aria-label");
       link.hidden = false;
     }
     const finishes = selectedVariant ? [selectedVariant] : offeredVariants(detail);
@@ -800,19 +811,17 @@ async function showCard(id, language, selectedVariant, scrollToDetail = false) {
     const update = () => {
       if (select.value === "noRarity") {
         prices.replaceChildren(element("p", t("No verified price for this printing."), "hint"));
-        return;
-      }
-      if (language !== "zh-cn" && (!card.localOnly || card.pricing)) {
+      } else if (language !== "zh-cn" && (!card.localOnly || card.pricing)) {
         renderPrices(prices, card, select.value);
       } else {
         prices.replaceChildren();
       }
-      const href = language === "zh-cn"
+      const direct = select.value === "noRarity" ? null : marketLink(card);
+      const link = element("a", language === "zh-cn" ? t("Check prices on PikaQian ↗")
+        : direct ? t(card.marketLabel || "View on Cardmarket ↗") : t("Search Cardmarket ↗"));
+      link.href = language === "zh-cn"
         ? "https://pikaqian.com/search?" + new URLSearchParams({ q: card.nameEn || card.name })
-        : marketLink(card);
-      if (!href) return;
-      const link = element("a", t(card.marketLabel || (language === "zh-cn" ? "Check prices on PikaQian ↗" : "View on Cardmarket ↗")));
-      link.href = href;
+        : direct || marketSearchLink(card);
       link.target = "_blank";
       link.rel = "noopener noreferrer";
       prices.append(link);

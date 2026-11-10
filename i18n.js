@@ -117,6 +117,7 @@ const german = {
   "Added {qty} × {name} to {collection}.": "{qty} × {name} zu „{collection}“ hinzugefügt.",
   "No verified price for this printing.": "Kein bestätigter Preis für diese Ausgabe.",
   "Check prices on PikaQian ↗": "Preise auf PikaQian ansehen ↗",
+  "Search Cardmarket ↗": "Auf Cardmarket suchen ↗",
   "View on Cardmarket ↗": "Auf Cardmarket ansehen ↗",
   "View this printing on Cardmarket ↗": "Diese Ausgabe auf Cardmarket ansehen ↗",
   "View ANA Dragonite on Cardmarket ↗": "ANA-Dragoran auf Cardmarket ansehen ↗",
