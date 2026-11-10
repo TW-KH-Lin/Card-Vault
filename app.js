@@ -639,6 +639,40 @@ function collectionMarketCard(detail, item) {
   return { ...detail, marketUrl: url, marketLabel: undefined, pricing: undefined, priceSnapshot: false };
 }
 
+let marketGuide;
+
+function cardmarketId(card) {
+  const id = card.pricing?.cardmarket?.idProduct;
+  if (Number.isSafeInteger(id) && id > 0) return String(id);
+  const url = cardmarketProductUrl(card.marketUrl);
+  return url && new URL(url).searchParams.get("idProduct");
+}
+
+async function withMarketGuide(card) {
+  const id = cardmarketId(card);
+  if (!id) return card;
+  if (!marketGuide) {
+    const request = fetch("visual/cardmarket-prices.json", { cache: "no-cache", signal: AbortSignal.timeout(10000) })
+      .then(response => {
+        if (!response.ok) throw new Error("Price guide unavailable");
+        return response.json();
+      });
+    marketGuide = request;
+    request.catch(() => { if (marketGuide === request) marketGuide = null; });
+  }
+  const guide = await marketGuide.catch(() => null);
+  if (!guide) return card;
+  const existing = card.pricing?.cardmarket;
+  const guideDate = Date.parse(guide.updated);
+  if (!Number.isFinite(guideDate) || Date.parse(existing?.updated) > guideDate) return card;
+  const [trend, reverse] = guide.prices?.[id] || [];
+  return {
+    ...card,
+    priceSnapshot: validPrice(trend) || validPrice(reverse),
+    pricing: { ...card.pricing, cardmarket: { idProduct: Number(id), updated: guide.updated, trend, "trend-holo": reverse } }
+  };
+}
+
 function marketSearchLink(card) {
   return "https://www.cardmarket.com/en/Pokemon/Products/Search?" +
     new URLSearchParams({ searchString: card.nameEn || card.name });
@@ -723,20 +757,17 @@ function cardFacts(card, language, selectedVariant, externalLink) {
         ? t("See market listing") : t("Price unavailable");
     }
   };
-  if (card.localOnly) {
-    render(card);
+  const load = async () => {
+    if (!facts.isConnected) return;
+    const detail = card.localOnly ? card : await getCard(language, card.id).catch(() => card);
+    const priced = await withMarketGuide(collectionMarketCard(detail, card));
+    if (facts.isConnected) render(priced);
+  };
+  if (summaryObserver) {
+    summaryTasks.set(facts, load);
+    summaryObserver.observe(facts);
   } else {
-    const load = async () => {
-      if (!facts.isConnected) return;
-      const detail = await getCard(language, card.id).catch(() => card);
-      if (facts.isConnected) render(collectionMarketCard(detail, card));
-    };
-    if (summaryObserver) {
-      summaryTasks.set(facts, load);
-      summaryObserver.observe(facts);
-    } else {
-      enqueueSummary(load);
-    }
+    enqueueSummary(load);
   }
   return facts;
 }
@@ -766,7 +797,7 @@ async function showCard(id, language, selectedVariant, scrollToDetail = false, i
   $("detail").replaceChildren();
   status(t("Checking market prices…"));
   try {
-    const card = collectionMarketCard(await getCard(language, id), item);
+    const card = await withMarketGuide(collectionMarketCard(await getCard(language, id), item));
     if (request !== active) return;
     status(t("Check the printing and finish before adding the card."));
     const top = element("div", "", "detail-top");
@@ -1056,7 +1087,7 @@ async function refreshValues() {
     while (request === valueRequest && cursor < items.length) {
       const index = cursor++;
       const item = items[index];
-      const detail = collectionMarketCard(await getCard(item.language, item.id).catch(() => item), item);
+      const detail = await withMarketGuide(collectionMarketCard(await getCard(item.language, item.id).catch(() => item), item));
       const quote = await euroQuote(quotes(detail, item.variant).find(entry => validPrice(entry.value)));
       rows[index] = { item, detail, quote, cents: quote ? Math.round(quote.value * 100) : 0 };
     }
@@ -1185,7 +1216,9 @@ for (const tab of collectionTabs) {
 
 $("value-refresh").addEventListener("click", () => {
   cardDetails.clear();
+  marketGuide = null;
   usdRate = null;
+  renderCollection();
   refreshValues();
 });
 
