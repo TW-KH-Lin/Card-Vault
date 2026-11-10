@@ -640,6 +640,22 @@ function collectionMarketCard(detail, item) {
 }
 
 let marketGuide;
+let japaneseMarketMatches;
+
+async function matchedMarketProduct(card, language) {
+  if (language !== "ja" || card.marketUrl) return null;
+  if (!japaneseMarketMatches) {
+    const request = fetch("visual/cardmarket-matches.json?v=1", { signal: AbortSignal.timeout(10000) })
+      .then(response => {
+        if (!response.ok) throw new Error("Cardmarket matches unavailable");
+        return response.json();
+      });
+    japaneseMarketMatches = request;
+    request.catch(() => { if (japaneseMarketMatches === request) japaneseMarketMatches = null; });
+  }
+  const matches = await japaneseMarketMatches.catch(() => null);
+  return matches && Object.hasOwn(matches, card.id) ? matches[card.id] : null;
+}
 
 function cardmarketId(card) {
   const id = card.pricing?.cardmarket?.idProduct;
@@ -648,9 +664,10 @@ function cardmarketId(card) {
   return url && new URL(url).searchParams.get("idProduct");
 }
 
-async function withMarketGuide(card) {
-  const id = cardmarketId(card);
+async function withMarketGuide(card, language) {
+  const id = cardmarketId(card) || await matchedMarketProduct(card, language);
   if (!id) return card;
+  if (!card.marketUrl) card = { ...card, marketUrl: "https://www.cardmarket.com/Pokemon/Products?idProduct=" + id };
   if (!marketGuide) {
     const request = fetch("visual/cardmarket-prices.json", { cache: "no-cache", signal: AbortSignal.timeout(10000) })
       .then(response => {
@@ -760,7 +777,7 @@ function cardFacts(card, language, selectedVariant, externalLink) {
   const load = async () => {
     if (!facts.isConnected) return;
     const detail = card.localOnly ? card : await getCard(language, card.id).catch(() => card);
-    const priced = await withMarketGuide(collectionMarketCard(detail, card));
+    const priced = await withMarketGuide(collectionMarketCard(detail, card), language);
     if (facts.isConnected) render(priced);
   };
   if (summaryObserver) {
@@ -797,7 +814,7 @@ async function showCard(id, language, selectedVariant, scrollToDetail = false, i
   $("detail").replaceChildren();
   status(t("Checking market prices…"));
   try {
-    const card = await withMarketGuide(collectionMarketCard(await getCard(language, id), item));
+    const card = await withMarketGuide(collectionMarketCard(await getCard(language, id), item), language);
     if (request !== active) return;
     status(t("Check the printing and finish before adding the card."));
     const top = element("div", "", "detail-top");
@@ -1087,7 +1104,7 @@ async function refreshValues() {
     while (request === valueRequest && cursor < items.length) {
       const index = cursor++;
       const item = items[index];
-      const detail = await withMarketGuide(collectionMarketCard(await getCard(item.language, item.id).catch(() => item), item));
+      const detail = await withMarketGuide(collectionMarketCard(await getCard(item.language, item.id).catch(() => item), item), item.language);
       const quote = await euroQuote(quotes(detail, item.variant).find(entry => validPrice(entry.value)));
       rows[index] = { item, detail, quote, cents: quote ? Math.round(quote.value * 100) : 0 };
     }
