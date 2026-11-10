@@ -68,7 +68,7 @@ function mergeReferences(cards, references) {
 async function referencesFor(language) {
   const references = cardReferences[language] || [];
   if (language !== "ja") return references;
-  vintageReferences ??= fetch("visual/ja-vintage.json?v=6", { signal: AbortSignal.timeout(12000) }).then(response => {
+  vintageReferences ??= fetch("visual/ja-vintage.json?v=7", { signal: AbortSignal.timeout(12000) }).then(response => {
     if (!response.ok) throw new Error("Vintage catalogue unavailable");
     return response.json();
   });
@@ -632,6 +632,10 @@ function cardmarketProductUrl(value) {
 function collectionMarketCard(detail, item) {
   const url = cardmarketProductUrl(item?.cardmarketUrl);
   if (!url || url === cardmarketProductUrl(marketLink(detail))) return detail;
+  const verifiedId = detail.pricing?.cardmarket?.idProduct;
+  if (verifiedId && new URL(url).searchParams.get("idProduct") === String(verifiedId)) {
+    return { ...detail, marketUrl: url };
+  }
   return { ...detail, marketUrl: url, marketLabel: undefined, pricing: undefined, priceSnapshot: false };
 }
 
