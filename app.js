@@ -68,7 +68,7 @@ function mergeReferences(cards, references) {
 async function referencesFor(language) {
   const references = cardReferences[language] || [];
   if (language !== "ja") return references;
-  vintageReferences ??= fetch("visual/ja-vintage.json?v=4", { signal: AbortSignal.timeout(12000) }).then(response => {
+  vintageReferences ??= fetch("visual/ja-vintage.json?v=5", { signal: AbortSignal.timeout(12000) }).then(response => {
     if (!response.ok) throw new Error("Vintage catalogue unavailable");
     return response.json();
   });
@@ -613,6 +613,28 @@ function marketLink(card) {
   return null;
 }
 
+function cardmarketProductUrl(value) {
+  try {
+    const url = new URL(value);
+    if (url.origin !== "https://www.cardmarket.com" || url.username || url.password) return null;
+    const path = url.pathname.replace(/^\/[a-z]{2}(?=\/Pokemon\/)/i, "");
+    if (/^\/Pokemon\/Products\/Singles\/[^/]+\/[^/]+\/?$/.test(path)) {
+      return url.origin + "/en" + path.replace(/\/$/, "");
+    }
+    const id = url.searchParams.get("idProduct");
+    if (path === "/Pokemon/Products" && /^[1-9]\d{0,11}$/.test(id || "")) {
+      return url.origin + path + "?idProduct=" + id;
+    }
+  } catch {}
+  return null;
+}
+
+function collectionMarketCard(detail, item) {
+  const url = cardmarketProductUrl(item?.cardmarketUrl);
+  if (!url || url === cardmarketProductUrl(marketLink(detail))) return detail;
+  return { ...detail, marketUrl: url, marketLabel: undefined, pricing: undefined, priceSnapshot: false };
+}
+
 function marketSearchLink(card) {
   return "https://www.cardmarket.com/en/Pokemon/Products/Search?" +
     new URLSearchParams({ searchString: card.nameEn || card.name });
@@ -669,7 +691,7 @@ function cardFacts(card, language, selectedVariant, externalLink) {
   const render = async detail => {
     set.textContent = t("Set · {name}", { name: cardSetLabel(detail) });
     number.textContent = t("Number · {number}", { number: cardNumberLabel(detail) });
-    const href = selectedVariant === "noRarity" ? null : marketLink(detail);
+    const href = cardmarketProductUrl(card.cardmarketUrl) || (selectedVariant === "noRarity" ? null : marketLink(detail));
     if (href?.startsWith("https://www.cardmarket.com/")) {
       link.href = href;
       link.textContent = "Cardmarket ↗";
@@ -703,7 +725,7 @@ function cardFacts(card, language, selectedVariant, externalLink) {
     const load = async () => {
       if (!facts.isConnected) return;
       const detail = await getCard(language, card.id).catch(() => card);
-      if (facts.isConnected) render(detail);
+      if (facts.isConnected) render(collectionMarketCard(detail, card));
     };
     if (summaryObserver) {
       summaryTasks.set(facts, load);
@@ -735,12 +757,12 @@ function renderPrices(container, card, variant) {
   }
 }
 
-async function showCard(id, language, selectedVariant, scrollToDetail = false) {
+async function showCard(id, language, selectedVariant, scrollToDetail = false, item) {
   const request = ++active;
   $("detail").replaceChildren();
   status(t("Checking market prices…"));
   try {
-    const card = await getCard(language, id);
+    const card = collectionMarketCard(await getCard(language, id), item);
     if (request !== active) return;
     status(t("Check the printing and finish before adding the card."));
     const top = element("div", "", "detail-top");
@@ -803,7 +825,7 @@ async function showCard(id, language, selectedVariant, scrollToDetail = false) {
         status(t("This printing can have at most 1,000,000 copies in the collection."));
         return;
       }
-      const entry = { key, language, id, name: card.name, set: card.set?.name || "", localId: card.localId, image: card.image, printedNumber: card.printedNumber, pokedexNumber: card.pokedexNumber, variant: select.value, qty };
+      const entry = { key, language, id, name: card.name, set: card.set?.name || "", localId: card.localId, image: card.image, printedNumber: card.printedNumber, pokedexNumber: card.pokedexNumber, variant: select.value, qty, cardmarketUrl: existing?.cardmarketUrl };
       if (save(existing ? collection.map(item => item.key === key ? entry : item) : [...collection, entry])) {
         status(t("Added {qty} × {name} to {collection}.", { qty: copies, name: card.name, collection: profileLabel(currentProfile) }));
       }
@@ -816,10 +838,10 @@ async function showCard(id, language, selectedVariant, scrollToDetail = false) {
       } else {
         prices.replaceChildren();
       }
-      const direct = select.value === "noRarity" ? null : marketLink(card);
-      const link = element("a", language === "zh-cn" ? t("Check prices on PikaQian ↗")
+      const direct = cardmarketProductUrl(item?.cardmarketUrl) || (select.value === "noRarity" ? null : marketLink(card));
+      const link = element("a", language === "zh-cn" && !direct ? t("Check prices on PikaQian ↗")
         : direct ? t(card.marketLabel || "View on Cardmarket ↗") : t("Search Cardmarket ↗"));
-      link.href = language === "zh-cn"
+      link.href = language === "zh-cn" && !direct
         ? "https://pikaqian.com/search?" + new URLSearchParams({ q: card.nameEn || card.name })
         : direct || marketSearchLink(card);
       link.target = "_blank";
@@ -885,7 +907,7 @@ function renderCollection() {
       showMatches([], item.language, t("Checking market prices…"));
       lookupPanel.open = true;
       $("lookup-title").scrollIntoView({ block: "start" });
-      showCard(item.id, item.language, item.variant);
+      showCard(item.id, item.language, item.variant, false, item);
     });
     const remove = element("button", t("Remove one"));
     remove.setAttribute("aria-label", t("Remove one {name}", { name: item.name }));
@@ -894,7 +916,32 @@ function renderCollection() {
       return entry.qty > 1 ? [{ ...entry, qty: entry.qty - 1 }] : [];
     })));
     actions.append(view, remove);
-    row.append(entry, actions);
+    const edit = element("details", "", "market-edit");
+    const summary = element("summary", t("Edit Cardmarket link"));
+    const form = element("form");
+    const field = element("input");
+    field.type = "url";
+    field.maxLength = 1000;
+    field.value = item.cardmarketUrl || "";
+    field.setAttribute("aria-label", t("Cardmarket product URL"));
+    field.placeholder = t("Cardmarket product URL");
+    const message = element("small", t("Leave blank to restore the default link."), "hint");
+    message.setAttribute("role", "status");
+    form.append(field, element("button", t("Save link")), message);
+    form.addEventListener("submit", event => {
+      event.preventDefault();
+      const value = field.value.trim();
+      const url = value ? cardmarketProductUrl(value) : undefined;
+      if (value && !url) {
+        message.textContent = t("Enter a Cardmarket product page URL.");
+        return;
+      }
+      if (!save(collection.map(entry => entry.key === item.key ? { ...entry, cardmarketUrl: url } : entry))) {
+        message.textContent = t("The browser could not save the link.");
+      }
+    });
+    edit.append(summary, form);
+    row.append(entry, actions, edit);
     list.append(row);
   }
 }
@@ -976,6 +1023,8 @@ $("vault-file").addEventListener("change", async event => {
       for (const field of ["set", "image", "printedNumber", "pokedexNumber"]) {
         if (typeof card[field] === "string" && card[field].length <= 1000) copy[field] = card[field];
       }
+      const link = typeof card.cardmarketUrl === "string" && cardmarketProductUrl(card.cardmarketUrl);
+      if (link) copy.cardmarketUrl = link;
       return copy;
     });
     createProfile(data.name.trim(), cards);
@@ -1003,7 +1052,7 @@ async function refreshValues() {
     while (request === valueRequest && cursor < items.length) {
       const index = cursor++;
       const item = items[index];
-      const detail = await getCard(item.language, item.id).catch(() => item);
+      const detail = collectionMarketCard(await getCard(item.language, item.id).catch(() => item), item);
       const quote = await euroQuote(quotes(detail, item.variant).find(entry => validPrice(entry.value)));
       rows[index] = { item, detail, quote, cents: quote ? Math.round(quote.value * 100) : 0 };
     }
