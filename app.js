@@ -627,37 +627,51 @@ function offeredVariants(card) {
   return Object.keys(variants).filter(key => card.variants?.[key] || tcgVariant(card.pricing?.tcgplayer, key));
 }
 
-function marketLink(card) {
-  if (card.marketUrl) return card.marketUrl;
-  const id = card.pricing?.cardmarket?.idProduct;
-  if (Number.isSafeInteger(id) && id > 0) return "https://www.cardmarket.com/Pokemon/Products?idProduct=" + id;
-  return null;
+function normalizeProductId(value) {
+  const text = String(value ?? "").trim();
+  return /^[1-9]\d{0,11}$/.test(text) ? text : null;
 }
 
-function cardmarketProductUrl(value) {
+function productIdUrl(id) {
+  return "https://www.cardmarket.com/Pokemon/Products?idProduct=" + id;
+}
+
+function parseCardmarketProduct(value) {
   try {
     const url = new URL(value);
     if (url.origin !== "https://www.cardmarket.com" || url.username || url.password) return null;
-    const path = url.pathname.replace(/^\/[a-z]{2}(?=\/Pokemon\/)/i, "");
-    if (/^\/Pokemon\/Products\/Singles\/[^/]+\/[^/]+\/?$/.test(path)) {
-      return url.origin + "/en" + path.replace(/\/$/, "");
+    const path = url.pathname.replace(/^\/[a-z]{2}(?=\/Pokemon\/)/i, "").replace(/\/$/, "");
+    if (/^\/Pokemon\/Products\/Singles\/[^/]+\/[^/]+$/.test(path)) {
+      return { url: url.origin + "/en" + path, id: null };
     }
-    const id = url.searchParams.get("idProduct");
-    if (path === "/Pokemon/Products" && /^[1-9]\d{0,11}$/.test(id || "")) {
-      return url.origin + path + "?idProduct=" + id;
-    }
+    const ids = url.searchParams.getAll("idProduct");
+    const id = ids.length === 1 && normalizeProductId(ids[0]);
+    if (path === "/Pokemon/Products" && id) return { url: productIdUrl(id), id };
   } catch {}
   return null;
 }
 
+function cardmarketProductUrl(value) {
+  return parseCardmarketProduct(value)?.url || null;
+}
+
+function cardmarketId(card) {
+  return parseCardmarketProduct(card.marketUrl)?.id || normalizeProductId(card.pricing?.cardmarket?.idProduct);
+}
+
+function marketLink(card) {
+  const product = parseCardmarketProduct(card.marketUrl);
+  const id = cardmarketId(card);
+  return product ? card.marketUrl : (id ? productIdUrl(id) : null);
+}
+
 function collectionMarketCard(detail, item) {
-  const url = cardmarketProductUrl(item?.cardmarketUrl);
-  if (!url || url === cardmarketProductUrl(marketLink(detail))) return detail;
-  const verifiedId = detail.pricing?.cardmarket?.idProduct;
-  if (verifiedId && new URL(url).searchParams.get("idProduct") === String(verifiedId)) {
-    return { ...detail, marketUrl: url };
+  const selected = parseCardmarketProduct(item?.cardmarketUrl);
+  if (!selected || selected.url === cardmarketProductUrl(marketLink(detail))) return detail;
+  if (selected.id && selected.id === cardmarketId(detail)) {
+    return { ...detail, marketUrl: selected.url };
   }
-  return { ...detail, marketUrl: url, marketLabel: undefined, pricing: undefined, priceSnapshot: false };
+  return { ...detail, marketUrl: selected.url, marketLabel: undefined, pricing: undefined, priceSnapshot: false };
 }
 
 let marketGuide;
@@ -678,17 +692,14 @@ async function matchedMarketProduct(card, language) {
   return matches && Object.hasOwn(matches, card.id) ? matches[card.id] : null;
 }
 
-function cardmarketId(card) {
-  const id = card.pricing?.cardmarket?.idProduct;
-  if (Number.isSafeInteger(id) && id > 0) return String(id);
-  const url = cardmarketProductUrl(card.marketUrl);
-  return url && new URL(url).searchParams.get("idProduct");
-}
-
 async function withMarketGuide(card, language) {
-  const id = cardmarketId(card) || await matchedMarketProduct(card, language);
+  const id = cardmarketId(card) || normalizeProductId(await matchedMarketProduct(card, language));
   if (!id) return card;
-  if (!card.marketUrl) card = { ...card, marketUrl: "https://www.cardmarket.com/Pokemon/Products?idProduct=" + id };
+  const existingId = normalizeProductId(card.pricing?.cardmarket?.idProduct);
+  if (existingId && existingId !== id) {
+    card = { ...card, pricing: { ...card.pricing, cardmarket: undefined }, priceSnapshot: false };
+  }
+  if (!marketLink(card)) card = { ...card, marketUrl: productIdUrl(id) };
   if (!marketGuide) {
     const request = fetch("visual/cardmarket-prices.json", { cache: "no-cache", signal: AbortSignal.timeout(10000) })
       .then(response => {
@@ -998,17 +1009,33 @@ function renderCollection() {
     field.value = item.cardmarketUrl || "";
     field.setAttribute("aria-label", t("Cardmarket product URL"));
     field.placeholder = t("Cardmarket product URL");
-    const message = element("small", t("Leave blank to restore the default link."), "hint");
+    const message = element("small", t("Enter a product URL or ID. Clear both to restore the default link."), "hint");
     message.setAttribute("role", "status");
-    form.append(field, element("button", t("Save link")), message);
+    const productField = element("input");
+    productField.inputMode = "numeric";
+    productField.maxLength = 12;
+    productField.placeholder = t("Cardmarket product ID");
+    productField.setAttribute("aria-label", t("Cardmarket product ID"));
+    form.append(field, productField, element("button", t("Save link")), message);
     form.addEventListener("submit", event => {
       event.preventDefault();
       const value = field.value.trim();
-      const url = value ? cardmarketProductUrl(value) : undefined;
-      if (value && !url) {
+      const product = parseCardmarketProduct(value);
+      if (value && !product) {
         message.textContent = t("Enter a Cardmarket product page URL.");
         return;
       }
+      const rawId = productField.value.trim();
+      const id = normalizeProductId(rawId);
+      if (rawId && !id) {
+        message.textContent = t("Enter a valid Cardmarket product ID.");
+        return;
+      }
+      if (id && product?.id && product.id !== id) {
+        message.textContent = t("The product ID differs from the ID in the URL.");
+        return;
+      }
+      const url = id ? productIdUrl(id) : product?.url;
       if (!save(collection.map(entry => entry.key === item.key ? { ...entry, cardmarketUrl: url } : entry))) {
         message.textContent = t("The browser could not save the link.");
       }
