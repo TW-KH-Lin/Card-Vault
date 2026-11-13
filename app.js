@@ -854,7 +854,83 @@ function renderPrices(container, card, variant) {
   }
 }
 
-function marketFields() {
+let marketCatalogue;
+
+function catalogueSearch(field, productField, initialName) {
+  const panel = element("details", "", "market-catalogue");
+  panel.append(element("summary", t("Search Cardmarket catalogue")));
+  const query = element("input");
+  query.type = "search";
+  query.maxLength = 150;
+  query.value = initialName || "";
+  query.placeholder = t("English card name or product ID");
+  const label = element("label", query.placeholder);
+  label.append(query);
+  const status = element("small", "", "hint");
+  status.setAttribute("role", "status");
+  const results = element("ul", "", "market-catalogue-results");
+  panel.append(label, status, results);
+
+  let request = 0;
+  async function search() {
+    const current = ++request;
+    const terms = query.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    results.replaceChildren();
+    status.textContent = "";
+    if (!terms.length) return;
+    status.textContent = t("Loading Cardmarket catalogue…");
+    marketCatalogue ??= fetch("visual/cardmarket-catalogue.json", {
+      cache: "no-cache", signal: AbortSignal.timeout(25000)
+    }).then(response => {
+      if (!response.ok) throw new Error("Catalogue unavailable");
+      return response.json();
+    }).catch(error => {
+      marketCatalogue = null;
+      throw error;
+    });
+    try {
+      const products = await marketCatalogue;
+      if (current !== request) return;
+      const id = terms.length === 1 && normalizeProductId(terms[0]);
+      const matches = products.filter(([productId, name]) => id
+        ? String(productId) === id : terms.every(term => name.toLowerCase().includes(term)));
+      const limit = 25;
+      status.textContent = !matches.length ? t("No catalogue matches.") : matches.length > limit
+        ? t("Showing 25 matches. Refine your search to see others.") : t("Verify the printing on Cardmarket before using its ID.");
+      for (const [productId, name, expansion] of matches.slice(0, limit)) {
+        const row = element("li");
+        const link = element("a", name + " · ID " + productId + " ↗");
+        link.href = productIdUrl(productId);
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        const choose = element("button", t("Use ID"));
+        choose.type = "button";
+        choose.setAttribute("aria-label", t("Use product ID {id}", { id: productId }));
+        choose.addEventListener("click", () => {
+          field.value = "";
+          productField.value = String(productId);
+          panel.open = false;
+          productField.focus();
+        });
+        row.append(link, element("small", t("Expansion ID {id}", { id: expansion })), choose);
+        results.append(row);
+      }
+    } catch {
+      if (current === request) status.textContent = t("Could not load the catalogue. Change the search or reopen it to retry.");
+    }
+  }
+  panel.addEventListener("toggle", () => { if (panel.open) search(); });
+  query.addEventListener("input", search);
+  query.addEventListener("keydown", event => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      search();
+    }
+  });
+  return panel;
+}
+
+function marketFields(card) {
   const fields = element("fieldset", "", "market-fields");
   fields.append(element("legend", t("Edit Cardmarket link or price")));
   const field = element("input");
@@ -882,7 +958,7 @@ function marketFields() {
     label.append(input);
     fields.append(label);
   }
-  fields.append(message);
+  fields.append(catalogueSearch(field, productField, card.nameEn || card.name), message);
   const load = item => {
     const product = parseCardmarketProduct(item?.cardmarketUrl);
     field.value = product && !product.id ? product.url : "";
@@ -968,7 +1044,7 @@ async function showCard(id, language, selectedVariant, scrollToDetail = false, i
     const quantityLabel = element("label", t("Quantity to add"));
     quantityLabel.htmlFor = quantity.id;
     const add = element("button", t("Add to collection"), "primary");
-    const market = marketFields();
+    const market = marketFields(card);
     const selectedEntry = () => collection.find(entry => entry.key === language + "/" + card.id + "/" + select.value);
     market.load(selectedEntry());
     addForm.append(market.fields, quantityLabel, quantity, add);
@@ -1092,7 +1168,7 @@ function renderCollection() {
     const edit = element("details", "", "market-edit");
     const summary = element("summary", t("Edit Cardmarket link or price"));
     const form = element("form");
-    const market = marketFields();
+    const market = marketFields(item);
     market.load(item);
     form.append(market.fields, element("button", t("Save price settings")));
     form.addEventListener("submit", event => {
