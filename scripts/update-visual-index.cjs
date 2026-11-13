@@ -26,7 +26,7 @@ function decode(text) {
   });
 }
 
-async function japaneseSets(references) {
+async function japaneseSets(references, knownIds) {
   const inventory = await download(japaneseSource + "/sets/", "text");
   const sets = [...inventory.matchAll(/href="(\/sets\/([^"]+)-japanese-card-list\/)"[^>]*>.*?<span class="hw"><b>([^<]+)<\/b>(?:<i>\([^<]+\)<\/i>)?<small>(\d{4}) · (\d+) cards?<\/small>/g)];
   if (sets.length < 100) throw new Error("Japanese set inventory missing or incomplete");
@@ -34,42 +34,50 @@ async function japaneseSets(references) {
   const bySetNumber = new Set(references.filter(card => card.printedNumber)
     .map(card => card.set?.id + "/" + card.printedNumber));
   const additions = [];
-  for (const [, url, slug, title, year, count] of sets) {
-    const page = await download(japaneseSource + url, "text").catch(error => {
-      console.warn(error.message);
-      return "";
-    });
-    const rows = [...page.matchAll(/<tr data-pic="([^"]+)" data-set="[^"]*" data-r="([^"]*)"[^>]*><td>([^<]*)<\/td><td>([^<]*)<\/td>/g)];
-    if (rows.length < Number(count) * .85) {
-      console.warn(slug + ": incomplete set, will retry");
-      continue;
-    }
-    const knownSet = references.find(card => card.image?.startsWith("https://img.japanesepokecards.com/") &&
-      new URL(card.image).pathname.split("/").includes(slug));
-    const set = knownSet?.set || { id: "jp-" + slug, name: year + " " + decode(title) };
-    for (const [, rawImage, rarity, rawNumber, rawName] of rows) {
-      const image = decode(rawImage);
-      if (!image.startsWith("https://img.japanesepokecards.com/") || byImage.has(image)) continue;
-      const number = decode(rawNumber).trim();
-      const printed = /^(\d+)(?:\/([\w+-]+))?$/.exec(number);
-      const suffix = printed?.[2] || promoCodes[slug.replace(/-promos$/, "")];
-      const localId = printed?.[1].padStart(3, "0");
-      const printedNumber = localId && suffix ? localId + "/" + suffix : number;
-      const key = set.id + "/" + printedNumber;
-      if (printed && bySetNumber.has(key)) continue;
-      const filename = new URL(image).pathname.split("/").pop().replace(/\.[^.]+$/, "");
-      const name = decode(rawName).trim();
-      if (!filename || !name) continue;
-      additions.push({
-        id: "jp-source-" + slug + "-" + filename,
-        localId: localId || filename,
-        name, nameEn: name, set, image, localOnly: true,
-        ...(printed ? { printedNumber } : { unnumbered: true }),
-        ...(/Holo/i.test(rarity) ? { variants: { holo: true } } : {})
-      });
-      byImage.add(image);
-    }
+  const setBySlug = new Map();
+  for (const card of references) {
+    if (!card.image?.startsWith("https://img.japanesepokecards.com/") || !card.set?.id) continue;
+    const slug = new URL(card.image).pathname.split("/")[2]?.replace(/-japanese$/, "");
+    if (slug && !setBySlug.has(slug)) setBySlug.set(slug, card.set);
   }
+  let cursor = 0;
+  await Promise.all(Array.from({ length: 6 }, async () => {
+    while (cursor < sets.length) {
+      const [, url, slug, title, year, count] = sets[cursor++];
+      const page = await download(japaneseSource + url, "text").catch(error => {
+        console.warn(error.message);
+        return "";
+      });
+      const rows = [...page.matchAll(/<tr data-pic="([^"]+)" data-set="[^"]*" data-r="([^"]*)"[^>]*><td>([^<]*)<\/td><td>([^<]*)<\/td>/g)];
+      if (rows.length < Number(count) * .85) {
+        console.warn(slug + ": incomplete set, will retry");
+        continue;
+      }
+      const set = setBySlug.get(slug) || { id: "jp-" + slug, name: year + " " + decode(title) };
+      for (const [, rawImage, rarity, rawNumber, rawName] of rows) {
+        const image = decode(rawImage);
+        if (!image.startsWith("https://img.japanesepokecards.com/") || byImage.has(image)) continue;
+        const number = decode(rawNumber).trim();
+        const printed = /^(\d+)(?:\/([\w+-]+))?$/.exec(number);
+        const suffix = printed?.[2] || promoCodes[slug.replace(/-promos$/, "")];
+        const localId = printed?.[1].padStart(3, "0");
+        const printedNumber = localId && suffix ? localId + "/" + suffix : number;
+        const key = set.id + "/" + printedNumber;
+        if (printed && (bySetNumber.has(key) || knownIds.has(set.id + "-" + localId))) continue;
+        const filename = new URL(image).pathname.split("/").pop().replace(/\.[^.]+$/, "");
+        const name = decode(rawName).trim();
+        if (!filename || !name) continue;
+        additions.push({
+          id: "jp-source-" + slug + "-" + filename,
+          localId: localId || filename,
+          name, nameEn: name, set, image, localOnly: true,
+          ...(printed ? { printedNumber } : { unnumbered: true }),
+          ...(/Holo/i.test(rarity) ? { variants: { holo: true } } : {})
+        });
+        byImage.add(image);
+      }
+    }
+  }));
   return additions;
 }
 
@@ -88,7 +96,7 @@ async function update(language) {
     !card.image.includes("/tcgp/")).map(card => [card.id, { ...card, image: card.image + "/low.webp" }]));
   const allReferences = new Set(references.map(card => card.id));
   if (language === "ja") {
-    const supplement = await japaneseSets(references).catch(error => {
+    const supplement = await japaneseSets(references, new Set([...ids, ...byId.keys()])).catch(error => {
       console.warn(error.message);
       return [];
     });
