@@ -1,0 +1,63 @@
+name: Card Vault Pages
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '23 5 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: card-vault-pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        if: github.event_name != 'push'
+        with:
+          node-version: '22'
+      - name: Refresh the image index
+        if: github.event_name != 'push'
+        timeout-minutes: 30
+        continue-on-error: true
+        run: |
+          npm install --no-save --no-package-lock sharp@0.34.5
+          node scripts/update-visual-index.cjs
+      - name: Refresh the EUR price guide
+        if: github.event_name != 'push'
+        continue-on-error: true
+        run: python3 scripts/update-cardmarket-prices.py
+      - name: Save updated data
+        if: github.event_name != 'push'
+        run: |
+          git add visual
+          if ! git diff --cached --quiet; then
+            git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'Refresh Card Vault catalogue and prices'
+            git push origin HEAD:main
+          fi
+      - name: Stage the website
+        run: |
+          mkdir _site
+          cp index.html *.js style.css .nojekyll _site/
+          cp -R visual _site/
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@v4
+        id: deployment

@@ -69,7 +69,7 @@ function mergeReferences(cards, references) {
 async function referencesFor(language) {
   const references = cardReferences[language] || [];
   if (language !== "ja") return references;
-  vintageReferences ??= fetch("visual/ja-vintage.json?v=10", { signal: AbortSignal.timeout(12000) }).then(response => {
+  vintageReferences ??= fetch("visual/ja-vintage.json", { cache: "no-cache", signal: AbortSignal.timeout(12000) }).then(response => {
     if (!response.ok) throw new Error("Vintage catalogue unavailable");
     return response.json();
   });
@@ -881,7 +881,9 @@ async function showCard(id, language, selectedVariant, scrollToDetail = false, i
     info.append(label, select);
     top.append(info);
     const prices = element("div", "", "prices");
-    const note = element("p", card.set?.id === "PMCG1"
+    const note = element("p", card.id === "vintage-promo-j115"
+      ? t("Compare the copyright line and foil pattern to confirm the Ancient Mew printing before pricing.")
+      : card.set?.id === "PMCG1"
       ? t("The Japanese Base Set guide price is for the standard printing. Confirm the rarity mark before using it.")
       : card.priceSnapshot
       ? t("Dated Cardmarket guide price. Confirm the printing and condition on the listing.")

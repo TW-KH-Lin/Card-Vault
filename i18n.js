@@ -108,6 +108,7 @@ const german = {
   "No rarity mark": "Ohne Seltenheitssymbol",
   "Lenticular": "Lentikular",
   "The Japanese Base Set guide price is for the standard printing. Confirm the rarity mark before using it.": "Der Richtpreis für das japanische Basis-Set gilt für die Standardausgabe. Prüfe zuerst das Seltenheitssymbol.",
+  "Compare the copyright line and foil pattern to confirm the Ancient Mew printing before pricing.": "Prüfe den Copyright-Hinweis und das Folienmuster, um vor der Preisermittlung die Ausgabe von Ancient Mew zu bestimmen.",
   "Dated Cardmarket guide price. Confirm the printing and condition on the listing.": "Cardmarket-Richtpreis zum angegebenen Datum. Prüfe im Angebot die Ausgabe und den Zustand.",
   "These reference prices may come from a Japanese listing. Check the listing language, finish, and condition.": "Diese Referenzpreise können aus einem Angebot für japanische Karten stammen. Prüfe Sprache, Oberfläche und Zustand im Angebot.",
   "Prices are for ungraded cards and may vary by condition, language, and edition.": "Die Preise gelten für Karten ohne Grading und können je nach Zustand, Sprache und Ausgabe variieren.",
