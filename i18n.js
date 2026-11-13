@@ -1,6 +1,7 @@
 "use strict";
 
 const german = {
+  "Load latest version": "Neueste Version laden",
   "POKÉMON TCG / COLLECTION TOOL": "POKÉMON-SAMMELKARTENSPIEL / SAMMLUNG",
   "Personal collection files": "Persönliche Sammlungsdateien",
   "Save the selected collection as a JSON file. Loading a file creates a separate collection.": "Speichere die ausgewählte Sammlung als JSON-Datei. Beim Laden einer Datei wird eine eigene Sammlung erstellt.",

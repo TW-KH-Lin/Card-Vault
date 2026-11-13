@@ -64,3 +64,6 @@
 .market-edit > summary{cursor:pointer;color:var(--muted)}
 .market-edit form{margin-top:8px}
 .market-edit .hint{margin:0}
+
+.release-info{display:grid;gap:8px;justify-items:start;flex:none}
+.release-info button{letter-spacing:normal}

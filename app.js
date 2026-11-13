@@ -1292,3 +1292,10 @@ try { openProfile(currentProfile); } catch {
   refreshValues();
   vaultStatus(t("Browser storage is unavailable."));
 }
+
+
+$("app-update").addEventListener("click", () => {
+  const url = new URL(location.href);
+  url.searchParams.set("update", Date.now().toString());
+  location.replace(url);
+});
