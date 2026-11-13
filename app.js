@@ -613,6 +613,19 @@ async function euroQuote(quote) {
 
 const fxLabel = quote => quote.fxDate ? " · " + t("ECB FX {date}", { date: quote.fxDate }) : "";
 
+function validManualPrice(cents) {
+  return Number.isSafeInteger(cents) && cents >= 0 && cents <= 100000000;
+}
+
+function manualQuote(item) {
+  if (!validManualPrice(item?.manualPriceCents)) return null;
+  return { name: t("Manual estimate"), currency: "EUR", value: item.manualPriceCents / 100 };
+}
+
+function pricingVariant(item, variant) {
+  return ["noRarity", "unspecified"].includes(variant) && parseCardmarketProduct(item?.cardmarketUrl)?.id ? "normal" : variant;
+}
+
 function quotes(card, variant) {
   const cm = card.pricing?.cardmarket;
   const tcg = card.pricing?.tcgplayer;
@@ -791,18 +804,18 @@ function cardFacts(card, language, selectedVariant, externalLink) {
       link.hidden = false;
     }
     const finishes = selectedVariant ? [selectedVariant] : offeredVariants(detail);
-    const options = finishes.length ? finishes : ["normal"];
+    const options = finishes.length ? finishes.map(variant => pricingVariant(card, variant)) : ["normal"];
     const quotesByFinish = options.flatMap(variant => quotes(detail, variant).map(quote => ({ ...quote, variant })));
     const priced = quotesByFinish.filter(quote => validPrice(quote.value));
     const original = priced.find(entry => entry.currency === "EUR") || priced[0];
-    const quote = await euroQuote(original);
+    const quote = manualQuote(card) || await euroQuote(original);
     if (quote) {
       price.textContent = money(quote.value, quote.currency);
       const standard = detail.set?.id === "PMCG1" ? " · " + t(t("Standard print")) : "";
-      source.textContent = quote.name + standard + " · " + variants[quote.variant] +
+      source.textContent = !quote.variant ? quote.name : quote.name + standard + " · " + variants[quote.variant] +
         (detail.priceSnapshot && quote.updated ? " · " + quote.updated.slice(0, 10) : "") + fxLabel(quote);
     } else {
-      price.textContent = original ? t("Exchange rate unavailable") : selectedVariant !== "noRarity" && (marketLink(detail) || language === "zh-cn")
+      price.textContent = original ? t("Exchange rate unavailable") : (pricingVariant(card, selectedVariant) !== "noRarity" && (marketLink(detail) || language === "zh-cn"))
         ? t("See market listing") : t("Price unavailable");
     }
   };
@@ -911,18 +924,25 @@ async function showCard(id, language, selectedVariant, scrollToDetail = false, i
         status(t("This printing can have at most 1,000,000 copies in the collection."));
         return;
       }
-      const entry = { key, language, id, name: card.name, set: card.set?.name || "", localId: card.localId, image: card.image, printedNumber: card.printedNumber, pokedexNumber: card.pokedexNumber, variant: select.value, qty, cardmarketUrl: existing?.cardmarketUrl };
+      const entry = { key, language, id, name: card.name, set: card.set?.name || "", localId: card.localId, image: card.image, printedNumber: card.printedNumber, pokedexNumber: card.pokedexNumber, variant: select.value, qty, cardmarketUrl: existing?.cardmarketUrl, manualPriceCents: existing?.manualPriceCents };
       if (save(existing ? collection.map(item => item.key === key ? entry : item) : [...collection, entry])) {
         status(t("Added {qty} × {name} to {collection}.", { qty: copies, name: card.name, collection: profileLabel(currentProfile) }));
       }
     });
     const update = () => {
-      if (select.value === "noRarity") {
+      const variant = pricingVariant(item, select.value);
+      if (variant === "noRarity") {
         prices.replaceChildren(element("p", t("No verified price for this printing."), "hint"));
-      } else if (language !== "zh-cn" && (!card.localOnly || card.pricing)) {
-        renderPrices(prices, card, select.value);
+      } else if ((language !== "zh-cn" || cardmarketId(card)) && (!card.localOnly || card.pricing)) {
+        renderPrices(prices, card, variant);
       } else {
         prices.replaceChildren();
+      }
+      const estimate = select.value === item?.variant && manualQuote(item);
+      if (estimate) {
+        const row = element("div", "", "price");
+        row.append(element("span", estimate.name), element("strong", money(estimate.value, estimate.currency)));
+        prices.prepend(row);
       }
       const direct = cardmarketProductUrl(item?.cardmarketUrl) || (select.value === "noRarity" ? null : marketLink(card));
       const link = element("a", language === "zh-cn" && !direct ? t("Check prices on PikaQian ↗")
@@ -1003,22 +1023,33 @@ function renderCollection() {
     })));
     actions.append(view, remove);
     const edit = element("details", "", "market-edit");
-    const summary = element("summary", t("Edit Cardmarket link"));
+    const summary = element("summary", t("Edit Cardmarket link or price"));
     const form = element("form");
     const field = element("input");
     field.type = "url";
     field.maxLength = 1000;
-    field.value = item.cardmarketUrl || "";
+    const savedProduct = parseCardmarketProduct(item.cardmarketUrl);
+    field.value = savedProduct && !savedProduct.id ? savedProduct.url : "";
     field.setAttribute("aria-label", t("Cardmarket product URL"));
     field.placeholder = t("Cardmarket product URL");
-    const message = element("small", t("Enter a product URL or ID. Clear both to restore the default link."), "hint");
+    const message = element("small", t("Clear the manual price to use market quotes again. Clear the URL and ID to restore the default link."), "hint");
     message.setAttribute("role", "status");
     const productField = element("input");
     productField.inputMode = "numeric";
     productField.maxLength = 12;
     productField.placeholder = t("Cardmarket product ID");
     productField.setAttribute("aria-label", t("Cardmarket product ID"));
-    form.append(field, productField, element("button", t("Save link")), message);
+    productField.value = savedProduct?.id || "";
+    const priceField = element("input");
+    priceField.type = "number";
+    priceField.inputMode = "decimal";
+    priceField.min = "0";
+    priceField.max = "1000000";
+    priceField.step = "0.01";
+    priceField.placeholder = t("Manual unit price (€)");
+    priceField.setAttribute("aria-label", t("Manual unit price (€)"));
+    if (validManualPrice(item.manualPriceCents)) priceField.value = (item.manualPriceCents / 100).toFixed(2);
+    form.append(field, productField, priceField, element("button", t("Save price settings")), message);
     form.addEventListener("submit", event => {
       event.preventDefault();
       const value = field.value.trim();
@@ -1038,8 +1069,9 @@ function renderCollection() {
         return;
       }
       const url = id ? productIdUrl(id) : product?.url;
-      if (!save(collection.map(entry => entry.key === item.key ? { ...entry, cardmarketUrl: url } : entry))) {
-        message.textContent = t("The browser could not save the link.");
+      const manualPriceCents = priceField.value ? Math.round(priceField.valueAsNumber * 100) : undefined;
+      if (!save(collection.map(entry => entry.key === item.key ? { ...entry, cardmarketUrl: url, manualPriceCents } : entry))) {
+        message.textContent = t("The browser could not save the price settings.");
       }
     });
     edit.append(summary, form);
@@ -1127,6 +1159,7 @@ $("vault-file").addEventListener("change", async event => {
       }
       const link = typeof card.cardmarketUrl === "string" && cardmarketProductUrl(card.cardmarketUrl);
       if (link) copy.cardmarketUrl = link;
+      if (validManualPrice(card.manualPriceCents)) copy.manualPriceCents = card.manualPriceCents;
       return copy;
     });
     createProfile(data.name.trim(), cards);
@@ -1155,7 +1188,7 @@ async function refreshValues() {
       const index = cursor++;
       const item = items[index];
       const detail = await withMarketGuide(collectionMarketCard(await getCard(item.language, item.id).catch(() => item), item), item.language);
-      const quote = await euroQuote(quotes(detail, item.variant).find(entry => validPrice(entry.value)));
+      const quote = manualQuote(item) || await euroQuote(quotes(detail, pricingVariant(item, item.variant)).find(entry => validPrice(entry.value)));
       rows[index] = { item, detail, quote, cents: quote ? Math.round(quote.value * 100) : 0 };
     }
   }));
