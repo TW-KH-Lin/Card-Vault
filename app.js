@@ -854,6 +854,65 @@ function renderPrices(container, card, variant) {
   }
 }
 
+function marketFields() {
+  const fields = element("fieldset", "", "market-fields");
+  fields.append(element("legend", t("Edit Cardmarket link or price")));
+  const field = element("input");
+  field.type = "url";
+  field.maxLength = 1000;
+  field.setAttribute("aria-label", t("Cardmarket product URL"));
+  field.placeholder = t("Cardmarket product URL");
+  const message = element("small", t("Clear the manual price to use market quotes again. Clear the URL and ID to restore the default link."), "hint");
+  message.setAttribute("role", "status");
+  const productField = element("input");
+  productField.inputMode = "numeric";
+  productField.maxLength = 12;
+  productField.placeholder = t("Cardmarket product ID");
+  productField.setAttribute("aria-label", t("Cardmarket product ID"));
+  const priceField = element("input");
+  priceField.type = "number";
+  priceField.inputMode = "decimal";
+  priceField.min = "0";
+  priceField.max = "1000000";
+  priceField.step = "0.01";
+  priceField.placeholder = t("Manual unit price (€)");
+  priceField.setAttribute("aria-label", t("Manual unit price (€)"));
+  for (const input of [field, productField, priceField]) {
+    const label = element("label", input.placeholder);
+    label.append(input);
+    fields.append(label);
+  }
+  fields.append(message);
+  const load = item => {
+    const product = parseCardmarketProduct(item?.cardmarketUrl);
+    field.value = product && !product.id ? product.url : "";
+    productField.value = product?.id || "";
+    priceField.value = validManualPrice(item?.manualPriceCents) ? (item.manualPriceCents / 100).toFixed(2) : "";
+  };
+  const read = () => {
+    const value = field.value.trim();
+    const product = parseCardmarketProduct(value);
+    if (value && !product) {
+      message.textContent = t("Enter a Cardmarket product page URL.");
+      return;
+    }
+    const rawId = productField.value.trim();
+    const id = normalizeProductId(rawId);
+    if (rawId && !id) {
+      message.textContent = t("Enter a valid Cardmarket product ID.");
+      return;
+    }
+    if (id && product?.id && product.id !== id) {
+      message.textContent = t("The product ID differs from the ID in the URL.");
+      return;
+    }
+    const cardmarketUrl = id ? productIdUrl(id) : product?.url;
+    const manualPriceCents = priceField.value ? Math.round(priceField.valueAsNumber * 100) : undefined;
+    return { cardmarketUrl, manualPriceCents };
+  };
+  return { fields, load, read, message };
+}
+
 async function showCard(id, language, selectedVariant, scrollToDetail = false, item) {
   const request = ++active;
   $("detail").replaceChildren();
@@ -909,7 +968,10 @@ async function showCard(id, language, selectedVariant, scrollToDetail = false, i
     const quantityLabel = element("label", t("Quantity to add"));
     quantityLabel.htmlFor = quantity.id;
     const add = element("button", t("Add to collection"), "primary");
-    addForm.append(quantityLabel, quantity, add);
+    const market = marketFields();
+    const selectedEntry = () => collection.find(entry => entry.key === language + "/" + card.id + "/" + select.value);
+    market.load(selectedEntry());
+    addForm.append(market.fields, quantityLabel, quantity, add);
     addForm.addEventListener("submit", event => {
       event.preventDefault();
       const copies = quantity.valueAsNumber;
@@ -918,13 +980,15 @@ async function showCard(id, language, selectedVariant, scrollToDetail = false, i
         return;
       }
       const key = language + "/" + card.id + "/" + select.value;
-      const existing = collection.find(entry => entry.key === key);
+      const existing = selectedEntry();
+      const settings = market.read();
+      if (!settings) return;
       const qty = (existing?.qty || 0) + copies;
       if (!validQuantity(qty)) {
         status(t("This printing can have at most 1,000,000 copies in the collection."));
         return;
       }
-      const entry = { key, language, id, name: card.name, set: card.set?.name || "", localId: card.localId, image: card.image, printedNumber: card.printedNumber, pokedexNumber: card.pokedexNumber, variant: select.value, qty, cardmarketUrl: existing?.cardmarketUrl, manualPriceCents: existing?.manualPriceCents };
+      const entry = { key, language, id, name: card.name, set: card.set?.name || "", localId: card.localId, image: card.image, printedNumber: card.printedNumber, pokedexNumber: card.pokedexNumber, variant: select.value, qty, ...settings };
       if (save(existing ? collection.map(item => item.key === key ? entry : item) : [...collection, entry])) {
         status(t("Added {qty} × {name} to {collection}.", { qty: copies, name: card.name, collection: profileLabel(currentProfile) }));
       }
@@ -954,7 +1018,10 @@ async function showCard(id, language, selectedVariant, scrollToDetail = false, i
       link.rel = "noopener noreferrer";
       prices.append(link);
     };
-    select.addEventListener("change", update);
+    select.addEventListener("change", () => {
+      market.load(selectedEntry());
+      update();
+    });
     update();
     $("detail").append(top, prices, addForm, note);
     if (scrollToDetail) $("detail").scrollIntoView({ block: "nearest" });
@@ -1025,53 +1092,15 @@ function renderCollection() {
     const edit = element("details", "", "market-edit");
     const summary = element("summary", t("Edit Cardmarket link or price"));
     const form = element("form");
-    const field = element("input");
-    field.type = "url";
-    field.maxLength = 1000;
-    const savedProduct = parseCardmarketProduct(item.cardmarketUrl);
-    field.value = savedProduct && !savedProduct.id ? savedProduct.url : "";
-    field.setAttribute("aria-label", t("Cardmarket product URL"));
-    field.placeholder = t("Cardmarket product URL");
-    const message = element("small", t("Clear the manual price to use market quotes again. Clear the URL and ID to restore the default link."), "hint");
-    message.setAttribute("role", "status");
-    const productField = element("input");
-    productField.inputMode = "numeric";
-    productField.maxLength = 12;
-    productField.placeholder = t("Cardmarket product ID");
-    productField.setAttribute("aria-label", t("Cardmarket product ID"));
-    productField.value = savedProduct?.id || "";
-    const priceField = element("input");
-    priceField.type = "number";
-    priceField.inputMode = "decimal";
-    priceField.min = "0";
-    priceField.max = "1000000";
-    priceField.step = "0.01";
-    priceField.placeholder = t("Manual unit price (€)");
-    priceField.setAttribute("aria-label", t("Manual unit price (€)"));
-    if (validManualPrice(item.manualPriceCents)) priceField.value = (item.manualPriceCents / 100).toFixed(2);
-    form.append(field, productField, priceField, element("button", t("Save price settings")), message);
+    const market = marketFields();
+    market.load(item);
+    form.append(market.fields, element("button", t("Save price settings")));
     form.addEventListener("submit", event => {
       event.preventDefault();
-      const value = field.value.trim();
-      const product = parseCardmarketProduct(value);
-      if (value && !product) {
-        message.textContent = t("Enter a Cardmarket product page URL.");
-        return;
-      }
-      const rawId = productField.value.trim();
-      const id = normalizeProductId(rawId);
-      if (rawId && !id) {
-        message.textContent = t("Enter a valid Cardmarket product ID.");
-        return;
-      }
-      if (id && product?.id && product.id !== id) {
-        message.textContent = t("The product ID differs from the ID in the URL.");
-        return;
-      }
-      const url = id ? productIdUrl(id) : product?.url;
-      const manualPriceCents = priceField.value ? Math.round(priceField.valueAsNumber * 100) : undefined;
-      if (!save(collection.map(entry => entry.key === item.key ? { ...entry, cardmarketUrl: url, manualPriceCents } : entry))) {
-        message.textContent = t("The browser could not save the price settings.");
+      const settings = market.read();
+      if (!settings) return;
+      if (!save(collection.map(entry => entry.key === item.key ? { ...entry, ...settings } : entry))) {
+        market.message.textContent = t("The browser could not save the price settings.");
       }
     });
     edit.append(summary, form);
