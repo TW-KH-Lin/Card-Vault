@@ -210,7 +210,7 @@ function cardNumberLabel(card) {
 const japaneseSetCode = /^(?:XY|EBB|SC|CP[1-6]|sm2\+|(?:BW|XY|SM|SV|S|M)(?:\d[\w.+]*|-[Pp]|[A-Z]{1,3}))$/;
 
 function cardSetId(card) {
-  return card.set?.id || card.id.slice(0, -(String(card.localId).length + 1));
+  return card.set?.id || card.setId || card.id.slice(0, -(String(card.localId).length + 1));
 }
 
 function cardSetLabel(card) {
@@ -1170,7 +1170,7 @@ async function showCard(id, language, selectedVariant, scrollToDetail = false, i
         status(t("This printing can have at most 1,000,000 copies in the collection."));
         return;
       }
-      const entry = { key, language, id, name: card.name, set: card.set?.name || "", localId: card.localId, image: card.image, printedNumber: card.printedNumber, pokedexNumber: card.pokedexNumber, variant: select.value, qty, ...settings };
+      const entry = { ...collectionEntry(card, language, select.value, qty), ...settings };
       if (save(existing ? collection.map(item => item.key === key ? entry : item) : [...collection, entry])) {
         status(t("Added {qty} × {name} to {collection}.", { qty: copies, name: card.name, collection: profileLabel(currentProfile) }));
       }
@@ -1240,6 +1240,136 @@ function save(next, updateValues = true) {
   }
 }
 
+function collectionEntry(card, language, variant, qty) {
+  return {
+    key: language + "/" + card.id + "/" + variant,
+    language, id: card.id, name: card.name, set: card.set?.name || "", setId: cardSetId(card),
+    localId: card.localId, image: card.image, printedNumber: card.printedNumber, pokedexNumber: card.pokedexNumber,
+    variant, qty
+  };
+}
+
+const bulkPanel = $("bulk-add");
+const bulkSet = $("bulk-set");
+const bulkList = $("bulk-list");
+const bulkFilter = $("bulk-filter");
+const bulkStatus = message => { $("bulk-status").textContent = message; };
+let bulkRequest = 0;
+let bulkSets = new Map();
+
+async function loadBulkSets() {
+  const request = ++bulkRequest;
+  const language = $("language").value;
+  bulkSets = new Map();
+  bulkSet.replaceChildren();
+  bulkList.replaceChildren();
+  bulkRows = [];
+  bulkFilter.parentElement.hidden = true;
+  $("bulk-save").disabled = true;
+  bulkStatus(t("Loading sets…"));
+  try {
+    const [cards, sets] = await Promise.all([
+      catalogue(language).catch(async error => {
+        const references = await referencesFor(language);
+        if (!references.length) throw error;
+        return references;
+      }),
+      language === "zh-cn" ? [] : api(language, "/sets").catch(() => [])
+    ]);
+    if (request !== bulkRequest) return;
+    const byId = new Map(sets.map(set => [set.id, set]));
+    for (const card of cards) {
+      const id = cardSetId(card);
+      if (!id || card.image?.includes("/tcgp/")) continue;
+      const set = card.set || byId.get(id) || { id, name: id };
+      const key = id + "/" + set.name;
+      if (!bulkSets.has(key)) bulkSets.set(key, { name: set.name, cards: [] });
+      bulkSets.get(key).cards.push({ ...card, set });
+    }
+    bulkSet.append(new Option(t("Choose a set"), ""));
+    for (const [key, set] of [...bulkSets].sort((a, b) => a[1].name.localeCompare(b[1].name))) {
+      bulkSet.append(new Option(set.name + " · " + set.cards.length, key));
+    }
+    bulkStatus(t("Set the quantity for each card you own, then add them together."));
+  } catch {
+    if (request === bulkRequest) bulkStatus(t("The card catalogue is unavailable. Try again in a moment."));
+  }
+}
+
+bulkPanel.addEventListener("toggle", () => {
+  if (bulkPanel.open && !bulkSets.size) loadBulkSets();
+});
+$("language").addEventListener("change", () => {
+  ++bulkRequest;
+  bulkSets.clear();
+  if (bulkPanel.open) loadBulkSets();
+});
+let bulkRows = [];
+bulkSet.addEventListener("change", () => {
+  bulkList.replaceChildren();
+  bulkRows = [];
+  bulkFilter.value = "";
+  const set = bulkSets.get(bulkSet.value);
+  $("bulk-save").disabled = !set;
+  bulkFilter.parentElement.hidden = !set;
+  if (!set) return;
+  for (const card of [...set.cards].sort((a, b) => a.localId.localeCompare(b.localId, undefined, { numeric: true }))) {
+    const row = element("div", "", "bulk-row");
+    const img = image(card);
+    if (img) { img.loading = "lazy"; row.append(img); }
+    const label = element("label", cardNumberLabel(card) + " · " + card.name);
+    const qty = quantityInput(0);
+    qty.min = "0";
+    label.append(qty);
+    const finish = element("select");
+    finish.setAttribute("aria-label", t("Finish") + " · " + label.textContent);
+    const offered = offeredVariants(card);
+    const choices = $("language").value === "zh-cn" ? ["unspecified", "normal", "holo", "reverse"]
+      : offered.length ? offered : ["normal"];
+    if ($("language").value === "ja" && card.set.id === "PMCG1") choices.push("noRarity");
+    for (const variant of choices) finish.add(new Option(variants[variant] || t("Unspecified"), variant));
+    row.append(label, finish);
+    bulkList.append(row);
+    bulkRows.push({ card, qty, finish, row });
+  }
+});
+
+bulkFilter.addEventListener("input", () => {
+  const query = bulkFilter.value.normalize("NFKC").trim().toLowerCase();
+  for (const { card, row } of bulkRows) {
+    row.hidden = ![card.name, card.nameEn, cardNumberLabel(card)].some(value => value?.toLowerCase().includes(query));
+  }
+});
+
+$("bulk-form").addEventListener("submit", event => {
+  event.preventDefault();
+  const language = $("language").value;
+  const next = new Map(collection.map(card => [card.key, card]));
+  let added = 0;
+  for (const { card, qty, finish } of bulkRows) {
+    if (qty.valueAsNumber === 0) continue;
+    const entry = collectionEntry(card, language, finish.value, qty.valueAsNumber);
+    const existing = next.get(entry.key);
+    const total = (existing?.qty || 0) + entry.qty;
+    if (!validQuantity(entry.qty) || !validQuantity(total)) {
+      bulkStatus(t("This printing can have at most 1,000,000 copies in the collection."));
+      return;
+    }
+    next.set(entry.key, existing ? { ...existing, qty: total } : entry);
+    added += entry.qty;
+  }
+  if (!added) {
+    bulkStatus(t("Enter a quantity for at least one card."));
+    return;
+  }
+  if (save([...next.values()])) {
+    for (const row of bulkRows) row.qty.value = "0";
+    bulkStatus(t("Added {count} cards to {collection}.", { count: added, collection: profileLabel(currentProfile) }));
+  }
+});
+
+const openCollectionSets = new Set();
+
 function renderCollection() {
   const list = $("collection");
   clearSummaries(list);
@@ -1247,48 +1377,76 @@ function renderCollection() {
   const count = collection.reduce((sum, item) => sum + item.qty, 0);
   $("count").textContent = t(count === 1 ? "{count} CARD" : "{count} CARDS", { count });
   if (!count) list.append(element("p", t("Your vault is empty. Scan or search for a card to start your collection."), "empty"));
+  const groups = new Map();
   for (const item of collection) {
-    const row = element("div", "", "collection-row");
-    const entry = element("div", "", "entry");
-    const img = image(item);
-    if (img) entry.append(img);
-    const title = element("strong", item.name + " × " + item.qty);
-    title.append(element("small", (variants[item.variant] || t("Unspecified")) + " · " + item.language.toUpperCase(), "card-meta"));
-    title.append(cardFacts(item, item.language, item.variant));
-    entry.append(title);
-    const actions = element("div", "", "row-actions");
-    const view = element("button", t("Check price"));
-    view.addEventListener("click", () => {
-      showMatches([], item.language, t("Checking market prices…"));
-      lookupPanel.open = true;
-      $("lookup-title").scrollIntoView({ block: "start" });
-      showCard(item.id, item.language, item.variant, false, item);
-    });
-    const remove = element("button", t("Remove one"));
-    remove.setAttribute("aria-label", t("Remove one {name}", { name: item.name }));
-    remove.addEventListener("click", () => save(collection.flatMap(entry => {
-      if (entry.key !== item.key) return [entry];
-      return entry.qty > 1 ? [{ ...entry, qty: entry.qty - 1 }] : [];
-    })));
-    actions.append(view, remove);
-    const edit = element("details", "", "market-edit");
-    const summary = element("summary", t("Edit Cardmarket link or price"));
-    const form = element("form");
-    const market = marketFields(item);
-    market.load(item);
-    form.append(market.fields, element("button", t("Save price settings")));
-    form.addEventListener("submit", event => {
-      event.preventDefault();
-      const settings = market.read();
-      if (!settings) return;
-      if (!save(collection.map(entry => entry.key === item.key ? { ...entry, ...settings } : entry))) {
-        market.message.textContent = t("The browser could not save the price settings.");
-      }
-    });
-    edit.append(summary, form);
-    row.append(entry, actions, edit);
-    list.append(row);
+    const setId = cardSetId(item);
+    const key = item.language + "/" + (setId && setId !== "vintage-promos" ? setId : item.set || "");
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(item);
   }
+  for (const [key, items] of [...groups].sort((a, b) => cardSetLabel(a[1][0]).localeCompare(cardSetLabel(b[1][0])))) {
+    const section = element("details", "", "collection-set");
+    const stateKey = currentProfile.id + "/" + key;
+    section.open = openCollectionSets.has(stateKey);
+    section.addEventListener("toggle", () => {
+      if (section.open) openCollectionSets.add(stateKey);
+      else openCollectionSets.delete(stateKey);
+    });
+    const summary = element("summary");
+    const coverCard = items.find(item => item.image);
+    const cover = coverCard && image(coverCard);
+    if (cover) { cover.alt = ""; cover.loading = "lazy"; summary.append(cover); }
+    const heading = element("span", cardSetLabel(items[0]));
+    const count = items.reduce((sum, item) => sum + item.qty, 0);
+    heading.append(element("small", items[0].language.toUpperCase() + " · " + t(count === 1 ? "{count} CARD" : "{count} CARDS", { count })));
+    summary.append(heading);
+    section.append(summary);
+    list.append(section);
+    for (const item of items) renderCollectionRow(section, item);
+  }
+}
+
+function renderCollectionRow(section, item) {
+  const row = element("div", "", "collection-row");
+  const entry = element("div", "", "entry");
+  const img = image(item);
+  if (img) entry.append(img);
+  const title = element("strong", item.name + " × " + item.qty);
+  title.append(element("small", (variants[item.variant] || t("Unspecified")) + " · " + item.language.toUpperCase(), "card-meta"));
+  title.append(cardFacts(item, item.language, item.variant));
+  entry.append(title);
+  const actions = element("div", "", "row-actions");
+  const view = element("button", t("Check price"));
+  view.addEventListener("click", () => {
+    showMatches([], item.language, t("Checking market prices…"));
+    lookupPanel.open = true;
+    $("lookup-title").scrollIntoView({ block: "start" });
+    showCard(item.id, item.language, item.variant, false, item);
+  });
+  const remove = element("button", t("Remove one"));
+  remove.setAttribute("aria-label", t("Remove one {name}", { name: item.name }));
+  remove.addEventListener("click", () => save(collection.flatMap(entry => {
+    if (entry.key !== item.key) return [entry];
+    return entry.qty > 1 ? [{ ...entry, qty: entry.qty - 1 }] : [];
+  })));
+  actions.append(view, remove);
+  const edit = element("details", "", "market-edit");
+  const summary = element("summary", t("Edit Cardmarket link or price"));
+  const form = element("form");
+  const market = marketFields(item);
+  market.load(item);
+  form.append(market.fields, element("button", t("Save price settings")));
+  form.addEventListener("submit", event => {
+    event.preventDefault();
+    const settings = market.read();
+    if (!settings) return;
+    if (!save(collection.map(entry => entry.key === item.key ? { ...entry, ...settings } : entry))) {
+      market.message.textContent = t("The browser could not save the price settings.");
+    }
+  });
+  edit.append(summary, form);
+  row.append(entry, actions, edit);
+  section.append(row);
 }
 
 const vaultStatus = message => { $("vault-status").textContent = message; };
@@ -1365,7 +1523,7 @@ $("vault-file").addEventListener("change", async event => {
       if (keys.has(key)) throw new Error("Duplicate card");
       keys.add(key);
       const copy = { key, language: card.language, id: card.id, name: card.name, localId: card.localId, variant: card.variant, qty: card.qty };
-      for (const field of ["set", "image", "printedNumber", "pokedexNumber"]) {
+      for (const field of ["set", "setId", "image", "printedNumber", "pokedexNumber"]) {
         if (typeof card[field] === "string" && card[field].length <= 1000) copy[field] = card[field];
       }
       const link = typeof card.cardmarketUrl === "string" && cardmarketProductUrl(card.cardmarketUrl);
