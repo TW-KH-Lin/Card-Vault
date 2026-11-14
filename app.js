@@ -685,22 +685,42 @@ async function scan(blob) {
     canvas.getContext("2d").drawImage(photo, 0, 0, canvas.width, canvas.height);
     sourcePhoto = canvas;
     cropButton.hidden = false;
-    if ($("group-photo").checked) await scanGroup(canvas, request);
+    if ($("group-photo").checked) scanGroup(canvas);
     else await scanPhoto(canvas);
   } catch {
     if (request === active) scanStatus(t("The photo could not be read or the catalogue did not respond. Try again or search manually."));
   }
 }
 
-async function scanGroup(canvas, request) {
+$("group-photo").addEventListener("change", () => {
+  if (!sourcePhoto || stream) return;
+  ++active;
+  if ($("group-photo").checked) scanGroup(sourcePhoto);
+  else {
+    $("group-results").replaceChildren();
+    scanPhoto(sourcePhoto);
+  }
+});
+
+function scanGroup(canvas) {
   const language = $("language").value;
   const group = $("group-results");
   showMatches([], language, t("Comparing card artwork. The first scan may take a moment…"));
-  scanStatus(t("Finding cards in the photo…"));
-  const cards = (await catalogue(language).catch(() => referencesFor(language)))
-    .filter(card => !card.image?.includes("/tcgp/"));
-  const results = await visualSearch.group(canvas, language, cards, () => request === active);
-  if (request !== active) return;
+  group.replaceChildren();
+  const results = visualSearch.outlines(canvas);
+  renderGroupOutlines(canvas, results);
+  const request = active;
+  if (!results.length) return;
+  catalogue(language).then(cards => visualSearch.group(canvas, language, cards, () => request === active))
+    .then(matches => {
+      if (request !== active || matches.length < results.length) return;
+      renderGroupOutlines(canvas, matches);
+    }).catch(() => {});
+}
+
+function renderGroupOutlines(canvas, results) {
+  const group = $("group-results");
+  group.replaceChildren();
   if (!results.length) {
     scanStatus(t("No group match. Space the cards apart or use Select a card in the photo."));
     return;
@@ -717,7 +737,7 @@ async function scanGroup(canvas, request) {
     const label = t("Card {number}", { number: index + 1 });
     const button = element("button", String(index + 1), "card-outline");
     button.type = "button";
-    button.setAttribute("aria-label", label + (result.matches.length ? " · " + result.matches[0].card.name : ""));
+    button.setAttribute("aria-label", label);
     button.setAttribute("aria-pressed", "false");
     const { x, y, width, height } = result.bounds;
     Object.assign(button.style, {

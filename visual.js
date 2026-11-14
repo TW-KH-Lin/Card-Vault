@@ -358,5 +358,17 @@ const visualSearch = (() => {
 
   }
 
-  return { search, group };
+  function outlines(image) {
+    const selected = [];
+    for (const bounds of cardBoundaries(image)) {
+      if (selected.length && (bounds.width < selected[0].bounds.width * .65 ||
+        bounds.width > selected[0].bounds.width * 1.5)) continue;
+      if (selected.some(cell => overlap(cell.bounds, bounds) > .25)) continue;
+      selected.push({ bounds, canvas: crop(image, bounds) });
+      if (selected.length === 12) break;
+    }
+    return selected;
+  }
+
+  return { search, group, outlines };
 })();
