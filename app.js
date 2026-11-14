@@ -713,7 +713,8 @@ function scanGroup(canvas) {
   if (!results.length) return;
   catalogue(language).then(cards => visualSearch.group(canvas, language, cards, () => request === active))
     .then(matches => {
-      if (request !== active || matches.length < results.length) return;
+      if (request !== active || matches.length !== results.length) return;
+      if (!results.every(result => matches.some(match => visualSearch.overlap(result.bounds, match.bounds) > .8))) return;
       renderGroupOutlines(canvas, matches);
     }).catch(() => {});
 }

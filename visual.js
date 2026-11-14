@@ -358,9 +358,94 @@ const visualSearch = (() => {
 
   }
 
+  function contrastBoundaries(image) {
+    const sample = document.createElement("canvas");
+    const scale = 320 / Math.max(image.width, image.height);
+    const w = sample.width = Math.round(image.width * scale);
+    const h = sample.height = Math.round(image.height * scale);
+    const context = sample.getContext("2d", { willReadFrequently: true });
+    context.drawImage(image, 0, 0, w, h);
+    const { data } = context.getImageData(0, 0, w, h);
+    const mask = new Uint8Array(w * h);
+    const queue = new Int32Array(mask.length);
+    const candidates = [];
+    // Try several brightness cutoffs to account for lighting and shadows.
+    for (const cutoff of [145, 165, 185, 205]) {
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          const i = y * w + x;
+          const r = data[i * 4], g = data[i * 4 + 1], b = data[i * 4 + 2];
+          const luminance = (r + 2 * g + b) / 4;
+          const outline = g > 220 && r > 180 && b < 165;
+          mask[i] = x > 1 && x < w - 2 && y > 1 && y < h - 2 && luminance < cutoff && !outline ? 1 : 0;
+        }
+      }
+      // Bridge thin highlights and annotations interrupting the silhouette.
+      const foreground = mask.slice();
+      for (let y = 3; y < h - 3; y++) {
+        for (let x = 3; x < w - 3; x++) {
+          const i = y * w + x;
+          if ((foreground[i - 2] && foreground[i + 2]) ||
+              (foreground[i - 2 * w] && foreground[i + 2 * w])) mask[i] = 1;
+        }
+      }
+      for (let start = 0; start < mask.length; start++) {
+        if (!mask[start]) continue;
+        let size = 1;
+        let left = w, right = 0, top = h, bottom = 0;
+        queue[0] = start;
+        mask[start] = 0;
+        for (let j = 0; j < size; j++) {
+          const i = queue[j];
+          const x = i % w, y = Math.floor(i / w);
+          left = Math.min(left, x); right = Math.max(right, x);
+          top = Math.min(top, y); bottom = Math.max(bottom, y);
+          for (const next of [i - 1, i + 1, i - w, i + w]) {
+            if (!mask[next]) continue;
+            mask[next] = 0;
+            queue[size++] = next;
+          }
+        }
+        const width = right - left + 1, height = bottom - top + 1;
+        const add = (x, y, boxWidth, boxHeight, count) => {
+          const fill = count / (boxWidth * boxHeight);
+          const difference = Math.abs(boxWidth / boxHeight - ratio);
+          if (boxWidth < w * .13 || boxHeight < h * .16 || boxWidth > w * .86 ||
+            boxHeight > h * .95 || difference > .085 || fill < .45) return;
+          candidates.push({ x: x / scale, y: y / scale, width: boxWidth / scale,
+            height: boxHeight / scale, score: fill - difference * 2 });
+        };
+        add(left, top, width, height, size);
+        // A narrow shadow may join two vertically adjacent cards.
+        if (height / width < 2.35 || height / width > 3.35) continue;
+        const rows = new Uint16Array(height);
+        for (let i = 0; i < size; i++) rows[Math.floor(queue[i] / w) - top]++;
+        let split = Math.round(height / 2);
+        for (let y = Math.round(height * .43); y < height * .57; y++) {
+          if (rows[y] < rows[split]) split = y;
+        }
+        if (rows[split] > width * .4) continue;
+        for (const [first, last] of [[0, split], [split + 1, height]]) {
+          let minX = w, maxX = 0, minY = h, maxY = 0, count = 0;
+          for (let i = 0; i < size; i++) {
+            const y = Math.floor(queue[i] / w);
+            if (y < top + first || y >= top + last) continue;
+            const x = queue[i] % w;
+            minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+            minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+            count++;
+          }
+          if (count) add(minX, minY, maxX - minX + 1, maxY - minY + 1, count);
+        }
+      }
+    }
+    return candidates.sort((a, b) => b.score - a.score);
+  }
+
   function outlines(image) {
     const selected = [];
-    for (const bounds of cardBoundaries(image)) {
+    const contrast = contrastBoundaries(image);
+    for (const bounds of [...contrast, ...cardBoundaries(image)]) {
       if (selected.length && (bounds.width < selected[0].bounds.width * .65 ||
         bounds.width > selected[0].bounds.width * 1.5)) continue;
       if (selected.some(cell => overlap(cell.bounds, bounds) > .25)) continue;
@@ -370,5 +455,5 @@ const visualSearch = (() => {
     return selected;
   }
 
-  return { search, group, outlines };
+  return { search, group, outlines, overlap };
 })();
