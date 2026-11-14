@@ -773,7 +773,8 @@ function pricingVariant(item, variant) {
 function quotes(card, variant) {
   const cm = card.pricing?.cardmarket;
   const tcg = card.pricing?.tcgplayer;
-  const market = ["normal", "holo", "unlimited", "unlimitedHolo"].includes(variant) ? cm?.trend : variant === "reverse" ? cm?.["trend-holo"] : null;
+  const gemPrice = /^CBB[1-7]C-/.test(card.id) && cm?.idProduct;
+  const market = gemPrice ? (validPrice(cm["trend-holo"]) ? cm["trend-holo"] : cm.trend) : ["normal", "holo", "unlimited", "unlimitedHolo"].includes(variant) ? cm?.trend : variant === "reverse" ? cm?.["trend-holo"] : null;
   return [
     { name: "Cardmarket", currency: "EUR", value: market, updated: cm?.updated, metric: t("Price trend") },
     { name: "TCGplayer", currency: "USD", value: tcgVariant(tcg, variant)?.marketPrice, updated: tcg?.updated, metric: t("Market price") }
@@ -832,20 +833,22 @@ function collectionMarketCard(detail, item) {
 }
 
 let marketGuide;
-let japaneseMarketMatches;
+const marketMatches = new Map();
 
 async function matchedMarketProduct(card, language) {
-  if (language !== "ja" || card.marketUrl) return null;
-  if (!japaneseMarketMatches) {
-    const request = fetch("visual/cardmarket-matches.json?v=1", { signal: AbortSignal.timeout(10000) })
-      .then(response => {
-        if (!response.ok) throw new Error("Cardmarket matches unavailable");
-        return response.json();
-      });
-    japaneseMarketMatches = request;
-    request.catch(() => { if (japaneseMarketMatches === request) japaneseMarketMatches = null; });
+  if (card.marketUrl) return null;
+  const path = language === "ja" ? "visual/cardmarket-matches.json?v=1"
+    : language === "zh-cn" && /^CBB[1-7]C-/.test(card.id) ? "visual/cardmarket-gem-matches.json" : null;
+  if (!path) return null;
+  if (!marketMatches.has(path)) {
+    const request = fetch(path, { signal: AbortSignal.timeout(10000) }).then(response => {
+      if (!response.ok) throw new Error("Cardmarket matches unavailable");
+      return response.json();
+    });
+    marketMatches.set(path, request);
+    request.catch(() => marketMatches.delete(path));
   }
-  const matches = await japaneseMarketMatches.catch(() => null);
+  const matches = await marketMatches.get(path).catch(() => null);
   return matches && Object.hasOwn(matches, card.id) ? matches[card.id] : null;
 }
 
@@ -941,7 +944,7 @@ function cardFacts(card, language, selectedVariant, externalLink) {
       link.textContent = "Cardmarket ↗";
       link.setAttribute("aria-label", t("View {name} on Cardmarket", { name: detail.name }));
       link.hidden = false;
-    } else if (language !== "zh-cn") {
+    } else {
       link.href = marketSearchLink(detail);
       link.textContent = t("Search Cardmarket ↗");
       link.removeAttribute("aria-label");
@@ -1229,11 +1232,15 @@ async function showCard(id, language, selectedVariant, scrollToDetail = false, i
         prices.prepend(row);
       }
       const direct = cardmarketProductUrl(item?.cardmarketUrl) || (select.value === "noRarity" ? null : marketLink(card));
-      const link = element("a", language === "zh-cn" && !direct ? t("Check prices on PikaQian ↗")
-        : direct ? t(card.marketLabel || "View on Cardmarket ↗") : t("Search Cardmarket ↗"));
-      link.href = language === "zh-cn" && !direct
-        ? "https://pikaqian.com/search?" + new URLSearchParams({ q: card.nameEn || card.name })
-        : direct || marketSearchLink(card);
+      const link = element("a", direct ? t(card.marketLabel || "View on Cardmarket ↗") : t("Search Cardmarket ↗"));
+      link.href = direct || marketSearchLink(card);
+      if (language === "zh-cn" && !direct) {
+        const alternative = element("a", t("Check prices on PikaQian ↗"));
+        alternative.href = "https://pikaqian.com/search?" + new URLSearchParams({ q: card.nameEn || card.name });
+        alternative.target = "_blank";
+        alternative.rel = "noopener noreferrer";
+        prices.append(alternative);
+      }
       link.target = "_blank";
       link.rel = "noopener noreferrer";
       prices.append(link);
