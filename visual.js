@@ -61,6 +61,24 @@ const visualSearch = (() => {
     return output;
   }
 
+  function artworkDistance(query, reference, offset) {
+    let total = 0;
+    let count = 0;
+    const anchor = 43 * 3;
+    for (let row = 2; row <= 6; row++) {
+      for (let column = 2; column <= 8; column++) {
+        const pos = (row * width + column) * 3;
+        for (let channel = 0; channel < 3; channel++) {
+          const a = query[pos + channel] - query[anchor + channel];
+          const b = reference[offset + pos + channel] - reference[offset + anchor + channel];
+          total += Math.abs(a - b) * (channel === 0 ? .7 : .35);
+        }
+        count++;
+      }
+    }
+    return total / count;
+  }
+
   function distance(query, reference, offset, limit) {
     let total = 0;
     const cutoff = limit * weightTotal;
@@ -216,10 +234,14 @@ const visualSearch = (() => {
     const ranked = () => [...results.values()].sort((a, b) => a.distance - b.distance);
     function compare(card, descriptors, offset, languagePenalty) {
       let best = Infinity;
+      const gem = language === "zh-cn" && /^CBB[1-7]C-/.test(card.id);
       for (const query of queries) {
         const penalty = query.penalty + languagePenalty;
         const limit = Math.min(best, maxDistance) - penalty;
         best = Math.min(best, distance(query.signature, descriptors, offset, limit) + penalty);
+        if (gem && query.penalty <= 1.5) {
+          best = Math.min(best, artworkDistance(query.signature, descriptors, offset) + penalty + 4);
+        }
       }
       if (best <= maxDistance && best < (results.get(card.id)?.distance ?? Infinity)) {
         results.set(card.id, { card, distance: best });

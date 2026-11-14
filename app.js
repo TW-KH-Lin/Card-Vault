@@ -264,7 +264,7 @@ async function showMatches(cards, language, message) {
 function updateCardLanguageHelp() {
   const language = $("language").value;
   $("name").placeholder = t("e.g. {example}", { example: nameExamples[language] || "Charizard" });
-  $("number").placeholder = t("e.g. {example}", { example: language === "zh-cn" ? "CSV9C 245" : language === "ja" ? "SV2a 025/165" : "4/102" });
+  $("number").placeholder = t("e.g. {example}", { example: language === "zh-cn" ? "CBB4C 1405/07" : language === "ja" ? "SV2a 025/165" : "4/102" });
   $("language-help").textContent = language === "zh-cn"
     ? t("Artwork search covers selected sets. Other cards use printed details. Prices open in PikaQian.")
     : t("Used for photo scans and searches.");
@@ -286,9 +286,11 @@ $("search").addEventListener("submit", async event => {
   event.preventDefault();
   const name = $("name").value.normalize("NFKC").trim();
   const language = $("language").value;
-  const [number, total] = $("number").value.normalize("NFKC").trim().split(/\s*\/\s*/);
-  const setAndNumber = language === "zh-cn" && number.match(/^([A-Z0-9.-]+)\s+([A-Z0-9]+)$/i);
-  if (!name && (!number || (language === "zh-cn" && !setAndNumber))) {
+  const input = $("number").value.normalize("NFKC").trim().toUpperCase();
+  const [number, total] = input.split(/\s*\/\s*/);
+  const setAndNumber = language === "zh-cn" && input.match(/^([A-Z][A-Z0-9.]*[A-Z])(?:[\s:#-]*)(\d(?:[ \t]*\d){0,3})(?:\s*\/\s*(\d+))?$/) ||
+    (language === "zh-cn" && number.match(/^([A-Z0-9.-]+)\s+([A-Z0-9]+)$/));
+  if (!name && !number) {
     status(language === "zh-cn"
       ? t("Enter the printed set code and number together, a card name, or scan a photo.")
       : t("Enter a name or collector number, or scan a photo."));
@@ -300,8 +302,15 @@ $("search").addEventListener("submit", async event => {
   try {
     let cards;
     if (setAndNumber) {
-      const [, setCode, localId] = setAndNumber;
-      cards = [await findCard(language, setCode + "-" + localId)];
+      const [, setCode, printedId, denominator] = setAndNumber;
+      const localId = printedId.replace(/\s/g, "");
+      const local = await catalogue(language).catch(() => []);
+      cards = local.filter(card => cardSetId(card).toUpperCase() === setCode && matchNumber(card, localId));
+      if (!cards.length && !/^CBB[1-7]C$/.test(setCode)) cards = [await findCard(language, setCode + "-" + localId)];
+      if (denominator) cards = cards.filter(card => !card.printedNumber || matchTotal(card, denominator));
+    } else if (language === "zh-cn" && !name) {
+      cards = (await catalogue(language)).filter(card => matchNumber(card, number.replace(/\s/g, "")) &&
+        (!total || matchTotal(card, total)));
     } else {
       const japaneseNumber = language === "ja" && number.match(/^([A-Z0-9.+-]+)[\s-]+(\d+[A-Z]?)$/i);
       cards = name ? await findCards(language, name, japaneseNumber?.[2] || number) : await catalogue(language);
@@ -449,7 +458,7 @@ function readMatches(cards, text, printedNumbers) {
 async function readSimplifiedChinese(text, numbers, cards) {
   const codes = [...new Set(setCodes(text))].filter(code => /^(?:C(?:S|B)[A-Z0-9.]+|151C|30TH[A-Z]*C|(?:SM|SV|S|M)-?P)$/.test(code));
   const gemMatches = cards.filter(card => /^CBB[1-7]C$/.test(card.set?.id) &&
-    codes.includes(card.set.id) && numbers.some(([, number, total]) => card.printedNumber === number + "/" + total));
+    codes.includes(card.set.id) && numbers.some(([, number, total]) => matchNumber(card, number) && matchTotal(card, total)));
   if (gemMatches.length === 1) return [{ card: gemMatches[0], score: 420 }];
 
   if (codes.length === 1 && numbers.length === 1) {
@@ -477,7 +486,17 @@ async function readPrintedDetails(canvas, language, cards) {
   try {
     await worker.setParameters({ tessedit_pageseg_mode: tesseract.PSM.SPARSE_TEXT });
     const { data } = await worker.recognize(canvas);
-    const text = data.text.normalize("NFKC");
+    let text = data.text.normalize("NFKC");
+    if (language === "zh-cn" && canvas.width / canvas.height < .82) {
+      const footer = document.createElement("canvas");
+      const height = Math.round(canvas.height * .14);
+      const width = Math.round(canvas.width * .55);
+      footer.width = 700;
+      footer.height = Math.round(700 * height / width);
+      footer.getContext("2d").drawImage(canvas, 0, canvas.height - height, width, height, 0, 0, footer.width, footer.height);
+      const footerText = (await worker.recognize(footer)).data.text.normalize("NFKC");
+      text += "\n" + footerText;
+    }
     const numberText = language === "zh-cn" && /\bCBB[1-7]C\b/i.test(text)
       ? text.replace(/\b(\d{2})[^\S\r\n]+(\d{2})(?=\s*\/\s*\d{2}\b)/g, "$1$2")
       : text;
@@ -508,8 +527,16 @@ async function scanCandidates(canvas, language, request) {
     : imageMatches;
   if (request !== active) return [];
   const visualCards = images.map(({ card }) => ({ ...card, visualMatch: true }));
+  const gem = images[0]?.card;
+  const gemVariants = gem && /^CBB[1-7]C$/.test(gem.set?.id)
+    ? cards.filter(card => card.set?.id === gem.set.id && card.name === gem.name &&
+      card.localId.slice(0, 2) === gem.localId.slice(0, 2))
+    : [];
+  const includeGemVariants = matches => mergeReferences(matches,
+    gemVariants.filter(card => !matches.some(match => match.id === card.id)));
+
   const decisive = images[0]?.distance < 12 && (!images[1] || images[1].distance - images[0].distance > 3);
-  if (decisive) return visualCards;
+  if (decisive && gemVariants.length < 2) return visualCards;
 
   scanStatus(visualCards.length ? t("Checking printed details to refine the image matches…") : t("Checking the printed card details…"));
   const emptyDetails = { matches: [], numbers: [] };
@@ -525,6 +552,7 @@ async function scanCandidates(canvas, language, request) {
   const visualIds = new Set(visualCards.map(card => card.id));
   if (images.length) {
     const printedScores = new Map(matches.map(({ card, score }) => [card.id, score]));
+    const confirmedGem = matches.find(match => match.score === 420);
     const combined = visualCards.map((card, index) => ({
       card,
       rank: images[index].distance - (printedScores.get(card.id) || 0) / 60 -
@@ -532,7 +560,9 @@ async function scanCandidates(canvas, language, request) {
           (!promoSeries(code) || matchesPromoSeries(card, code))) ? 2 : 0)
     })).sort((a, b) => a.rank - b.rank).map(item => item.card);
     const textOnly = matches.filter(({ card }) => !visualIds.has(card.id)).slice(0, 3).map(({ card }) => card);
-    return [...combined, ...textOnly];
+    const ranked = [...combined, ...textOnly];
+    if (confirmedGem) return [confirmedGem.card, ...includeGemVariants(ranked).filter(card => card.id !== confirmedGem.card.id)];
+    return includeGemVariants(ranked);
   }
   const shortlist = matches.slice(0, 12);
   if (language === "zh-cn" || !numbers.length || shortlist.length < 2) return shortlist.map(({ card }) => card);
@@ -545,25 +575,95 @@ async function scanCandidates(canvas, language, request) {
   }).sort((a, b) => b.score - a.score).map(({ card }) => card);
 }
 
+let sourcePhoto;
+let cropStart;
+const cropCanvas = $("crop-photo");
+const cropButton = $("select-card");
+
+cropButton.addEventListener("click", () => {
+  if (!sourcePhoto) return;
+  cropStart = null;
+  cropCanvas.hidden = false;
+  cropCanvas.width = sourcePhoto.width;
+  cropCanvas.height = sourcePhoto.height;
+  cropCanvas.getContext("2d").drawImage(sourcePhoto, 0, 0);
+  scanStatus(t("Drag a box around one card. Repeat for each card in the photo."));
+});
+
+function cropPoint(event) {
+  const bounds = cropCanvas.getBoundingClientRect();
+  return {
+    x: Math.max(0, Math.min(cropCanvas.width, (event.clientX - bounds.left) * cropCanvas.width / bounds.width)),
+    y: Math.max(0, Math.min(cropCanvas.height, (event.clientY - bounds.top) * cropCanvas.height / bounds.height))
+  };
+}
+
+function cropBounds(point) {
+  return [Math.round(Math.min(cropStart.x, point.x)), Math.round(Math.min(cropStart.y, point.y)),
+    Math.round(Math.abs(point.x - cropStart.x)), Math.round(Math.abs(point.y - cropStart.y))];
+}
+
+cropCanvas.addEventListener("pointerdown", event => {
+  if (!event.isPrimary || event.button !== 0) return;
+  cropStart = cropPoint(event);
+  cropCanvas.setPointerCapture(event.pointerId);
+});
+cropCanvas.addEventListener("pointermove", event => {
+  if (!cropStart || !event.isPrimary) return;
+  const context = cropCanvas.getContext("2d");
+  context.drawImage(sourcePhoto, 0, 0);
+  context.strokeStyle = "#d4fb77";
+  context.lineWidth = 5;
+  context.strokeRect(...cropBounds(cropPoint(event)));
+});
+cropCanvas.addEventListener("pointercancel", () => { cropStart = null; });
+cropCanvas.addEventListener("pointerup", event => {
+  if (!cropStart || !event.isPrimary) return;
+  const [x, y, width, height] = cropBounds(cropPoint(event));
+  cropStart = null;
+  if (width < 30 || height < 30) return;
+  const card = document.createElement("canvas");
+  card.width = width;
+  card.height = height;
+  card.getContext("2d").drawImage(sourcePhoto, x, y, width, height, 0, 0, width, height);
+  scanPhoto(card);
+});
+
 async function scan(blob) {
   stopCamera();
   const request = ++active;
-  const language = $("language").value;
+  cropCanvas.hidden = true;
+  cropButton.hidden = true;
+  sourcePhoto = null;
   if (photoUrl) URL.revokeObjectURL(photoUrl);
   photoUrl = URL.createObjectURL(blob);
-  $("photo").src = photoUrl;
-  $("photo").hidden = false;
+  const photo = $("photo");
+  photo.src = photoUrl;
+  photo.hidden = false;
   $("placeholder").hidden = true;
+  try {
+    await photo.decode();
+    if (request !== active) return;
+    const canvas = document.createElement("canvas");
+    const scale = Math.min(1, 2400 / Math.max(photo.naturalWidth, photo.naturalHeight));
+    canvas.width = Math.round(photo.naturalWidth * scale);
+    canvas.height = Math.round(photo.naturalHeight * scale);
+    canvas.getContext("2d").drawImage(photo, 0, 0, canvas.width, canvas.height);
+    sourcePhoto = canvas;
+    cropButton.hidden = false;
+    await scanPhoto(canvas);
+  } catch {
+    if (request === active) scanStatus(t("The photo could not be read or the catalogue did not respond. Try again or search manually."));
+  }
+}
+
+async function scanPhoto(canvas) {
+  const request = ++active;
+  const language = $("language").value;
   const comparing = t("Comparing card artwork. The first scan may take a moment…");
   showMatches([], language, comparing);
   scanStatus(comparing);
   try {
-    await $("photo").decode();
-    const canvas = document.createElement("canvas");
-    const scale = Math.min(1, 2000 / Math.max($("photo").naturalWidth, $("photo").naturalHeight));
-    canvas.width = Math.round($("photo").naturalWidth * scale);
-    canvas.height = Math.round($("photo").naturalHeight * scale);
-    canvas.getContext("2d").drawImage($("photo"), 0, 0, canvas.width, canvas.height);
     if (request !== active) return;
     const candidates = await scanCandidates(canvas, language, request);
     if (request !== active) return;
@@ -572,7 +672,13 @@ async function scan(blob) {
       return;
     }
     $("scan-progress").hidden = true;
-    showMatches(candidates, language, t("Compare the card images and collector numbers, then choose a printing."));
+    const first = candidates[0];
+    const similarGemPrintings = /^CBB[1-7]C$/.test(first.set?.id) && candidates.some(card =>
+      card.id !== first.id && card.set?.id === first.set.id && card.name === first.name &&
+      card.localId.slice(0, 2) === first.localId.slice(0, 2));
+    showMatches(candidates, language, similarGemPrintings
+      ? t("Several foil versions share this artwork. Compare the full number printed on your card.")
+      : t("Compare the card images and collector numbers, then choose a printing."));
     lookupPanel.open = true;
     if (matchMedia("(max-width: 680px)").matches) $("lookup-title").scrollIntoView({ block: "start" });
   } catch {

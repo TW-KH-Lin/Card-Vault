@@ -79,3 +79,5 @@
 .market-catalogue-results li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px;padding:8px 0;border-bottom:1px solid var(--line)}
 .market-catalogue-results small{grid-column:1;color:var(--muted)}
 .market-catalogue-results button{grid-column:2;grid-row:1/3;align-self:center}
+#crop-photo{display:block;width:100%;height:auto;margin-top:8px;touch-action:none;cursor:crosshair}
+#crop-photo[hidden]{display:none}
