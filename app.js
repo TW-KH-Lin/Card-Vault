@@ -846,7 +846,7 @@ async function matchedMarketProduct(card, language) {
       return response.json();
     });
     marketMatches.set(path, request);
-    request.catch(() => marketMatches.delete(path));
+    request.catch(() => { if (marketMatches.get(path) === request) marketMatches.delete(path); });
   }
   const matches = await marketMatches.get(path).catch(() => null);
   return matches && Object.hasOwn(matches, card.id) ? matches[card.id] : null;
@@ -1483,6 +1483,25 @@ function renderCollection() {
   }
 }
 
+function collectionMarketEditor(item) {
+  const edit = element("details", "", "market-edit");
+  const summary = element("summary", t("Edit Cardmarket link or price"));
+  const form = element("form");
+  const market = marketFields(item);
+  market.load(item);
+  form.append(market.fields, element("button", t("Save price settings")));
+  form.addEventListener("submit", event => {
+    event.preventDefault();
+    const settings = market.read();
+    if (!settings) return;
+    if (!save(collection.map(entry => entry.key === item.key ? { ...entry, ...settings } : entry))) {
+      market.message.textContent = t("The browser could not save the price settings.");
+    }
+  });
+  edit.append(summary, form);
+  return edit;
+}
+
 function renderCollectionRow(section, item) {
   const row = element("div", "", "collection-row");
   const entry = element("div", "", "entry");
@@ -1507,21 +1526,7 @@ function renderCollectionRow(section, item) {
     return entry.qty > 1 ? [{ ...entry, qty: entry.qty - 1 }] : [];
   })));
   actions.append(view, remove);
-  const edit = element("details", "", "market-edit");
-  const summary = element("summary", t("Edit Cardmarket link or price"));
-  const form = element("form");
-  const market = marketFields(item);
-  market.load(item);
-  form.append(market.fields, element("button", t("Save price settings")));
-  form.addEventListener("submit", event => {
-    event.preventDefault();
-    const settings = market.read();
-    if (!settings) return;
-    if (!save(collection.map(entry => entry.key === item.key ? { ...entry, ...settings } : entry))) {
-      market.message.textContent = t("The browser could not save the price settings.");
-    }
-  });
-  edit.append(summary, form);
+  const edit = collectionMarketEditor(item);
   row.append(entry, actions, edit);
   section.append(row);
 }
@@ -1726,7 +1731,14 @@ async function refreshValues() {
       });
       const actions = element("td");
       actions.append(remove);
-      row.append(element("td", label), quantityCell,
+      const cardCell = element("td", label);
+      const direct = item.variant === "noRarity" ? cardmarketProductUrl(item.cardmarketUrl) : marketLink(detail);
+      const lookup = element("a", direct ? "Cardmarket ↗" : t("Search Cardmarket ↗"), "valuation-market");
+      lookup.href = direct || marketSearchLink(detail);
+      lookup.target = "_blank";
+      lookup.rel = "noopener noreferrer";
+      cardCell.append(lookup, collectionMarketEditor(item));
+      row.append(cardCell, quantityCell,
         element("td", quote ? money(cents / 100, quote.currency) : t("Unavailable")),
         subtotalCell,
         element("td", quote ? quote.name + (quote.updated ? " · " + quote.updated.slice(0, 10) : "") + fxLabel(quote) : "—"), actions);
@@ -1763,6 +1775,7 @@ for (const tab of collectionTabs) {
 $("value-refresh").addEventListener("click", () => {
   cardDetails.clear();
   marketGuide = null;
+  marketMatches.clear();
   usdRate = null;
   renderCollection();
   refreshValues();
