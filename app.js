@@ -10,8 +10,8 @@ function scanStatus(message) {
 const storageKey = "card-vault-collection-v1";
 const tcgdex = "https://api.tcgdex.net/v2";
 const cryst = "https://tcg.mik.moe/api/v3/card";
-const ocrLanguages = { de: "deu", fr: "fra", es: "spa", it: "ita", pt: "por", en: "eng", ja: "jpn", "zh-cn": "chi_sim", "zh-tw": "chi_tra" };
-const nameExamples = { de: "Glurak", ja: "ピカチュウ", "zh-cn": "皮卡丘", "zh-tw": "皮卡丘" };
+const ocrLanguages = { de: "deu", fr: "fra", es: "spa", it: "ita", pt: "por", en: "eng", ja: "jpn", ko: "kor", "zh-cn": "chi_sim", "zh-tw": "chi_tra" };
+const nameExamples = { de: "Glurak", ja: "ピカチュウ", ko: "피카츄", "zh-cn": "皮卡丘", "zh-tw": "皮卡丘" };
 const variants = { normal: t("Standard"), holo: t("Holo"), reverse: t("Reverse holo"), firstEdition: t("First edition"), firstEditionHolo: t("First edition holo"), unlimited: t("Unlimited"), unlimitedHolo: t("Unlimited holo"), noRarity: t("No rarity mark"), lenticular: t("Lenticular") };
 const marketKeys = { normal: ["normal"], holo: ["holofoil", "holo"], reverse: ["reverse-holofoil", "reverse"], firstEdition: ["1st-edition"], firstEditionHolo: ["1st-edition-holofoil"], unlimited: ["unlimited"], unlimitedHolo: ["unlimited-holofoil"] };
 const tcgVariant = (pricing, variant) => marketKeys[variant]?.map(key => pricing?.[key]).find(Boolean);
@@ -45,7 +45,8 @@ function image(card, quality = "low") {
     card.image.startsWith("https://vintagecardorigins.com/img/");
   const correctedFront = /^visual\/fronts\/[A-Za-z0-9-]+\.webp$/.test(card.image);
   const deckImage = /^https:\/\/pokecardex-scans\.b-cdn\.net\/sets_jp\/(?:PESD|MCMP|MCVS5)\/\d+\.jpg$/.test(card.image);
-  if (!tcgdexImage && !vintageImage && !correctedFront && !deckImage && !referenceImages.has(card.image) && !card.image.startsWith("https://tcg.mik.moe/static/img/")) return null;
+  const koreanImage = /^https:\/\/(?:cards\.image\.pokemonkorea\.co\.kr|pokemoncard\.co\.kr)\//.test(card.image);
+  if (!koreanImage && !tcgdexImage && !vintageImage && !correctedFront && !deckImage && !referenceImages.has(card.image) && !card.image.startsWith("https://tcg.mik.moe/static/img/")) return null;
   const img = element("img");
   img.src = tcgdexImage ? card.image + "/" + quality + ".webp" : card.image;
   img.alt = card.name;
@@ -83,8 +84,8 @@ async function referencesFor(language) {
 
 function catalogue(language) {
   if (!catalogues.has(language)) {
-    const request = language === "zh-cn"
-      ? fetch("visual/zh-cn-cards.json?v=3", { signal: AbortSignal.timeout(12000) }).then(response => {
+    const request = ["ko", "zh-cn"].includes(language)
+      ? fetch("visual/" + language + "-cards.json" + (language === "zh-cn" ? "?v=3" : ""), { signal: AbortSignal.timeout(12000) }).then(response => {
         if (!response.ok) throw new Error("Image catalogue unavailable");
         return response.json();
       })
@@ -121,6 +122,11 @@ function crystCard(card) {
 }
 
 async function findCard(language, id) {
+  if (language === "ko") {
+    const card = (await catalogue(language)).find(card => card.id === id);
+    if (!card) throw new Error("Korean card unavailable");
+    return card;
+  }
   if (language !== "zh-cn") {
     const reference = (await referencesFor(language)).find(card => card.id === id);
     if (reference?.localOnly) return reference;
@@ -154,6 +160,7 @@ function normalizedNumber(value) {
 }
 
 async function findCards(language, name, number) {
+  if (language === "ko") return (await catalogue(language)).filter(card => clean(card.name).includes(clean(name)));
   if (language === "zh-cn") {
     const needle = clean(name);
     const local = (await catalogue(language).catch(() => [])).filter(card => card.localOnly &&
@@ -264,9 +271,10 @@ async function showMatches(cards, language, message) {
 function updateCardLanguageHelp() {
   const language = $("language").value;
   $("name").placeholder = t("e.g. {example}", { example: nameExamples[language] || "Charizard" });
-  $("number").placeholder = t("e.g. {example}", { example: language === "zh-cn" ? "CBB4C 1405/07" : language === "ja" ? "SV2a 025/165" : "4/102" });
+  $("number").placeholder = t("e.g. {example}", { example: language === "zh-cn" ? "CBB4C 1405/07" : ["ja", "ko"].includes(language) ? "SV2a 025/165" : "4/102" });
   $("language-help").textContent = language === "zh-cn"
     ? t("Artwork search covers selected sets. Other cards use printed details. Prices open in PikaQian.")
+    : language === "ko" ? t("Artwork matching is available for SV4M. Other Korean sets can use printed details.")
     : t("Used for photo scans and searches.");
 }
 
@@ -312,7 +320,7 @@ $("search").addEventListener("submit", async event => {
       cards = (await catalogue(language)).filter(card => matchNumber(card, number.replace(/\s/g, "")) &&
         (!total || matchTotal(card, total)));
     } else {
-      const japaneseNumber = language === "ja" && number.match(/^([A-Z0-9.+-]+)[\s-]+(\d+[A-Z]?)$/i);
+      const japaneseNumber = ["ja", "ko"].includes(language) && number.match(/^([A-Z0-9.+-]+)[\s-]+(\d+[A-Z]?)$/i);
       cards = name ? await findCards(language, name, japaneseNumber?.[2] || number) : await catalogue(language);
       if (japaneseNumber) {
         const [, setCode, localId] = japaneseNumber;
@@ -322,8 +330,10 @@ $("search").addEventListener("submit", async event => {
       } else if (number) cards = cards.filter(card => matchNumber(card, number) ||
         (!total && card.pokedexNumber && normalizedNumber(card.pokedexNumber) === normalizedNumber(number.replace(/^No\.?\s*/i, ""))));
     }
-    if (language === "ja" && promoSeries(total)) {
+    if (["ja", "ko"].includes(language) && promoSeries(total)) {
       cards = cards.filter(card => matchesPromoSeries(card, total));
+    } else if (total && language === "ko") {
+      cards = cards.filter(card => matchTotal(card, total));
     } else if (total && cards.length > 1 && language !== "zh-cn") {
       const sets = await api(language, "/sets").catch(() => []);
       const byId = new Map(sets.map(set => [set.id, set]));
@@ -472,7 +482,7 @@ function readMatches(cards, text, printedNumbers) {
   return cards.flatMap(card => {
     const name = clean(card.name);
     if (!name) return [];
-    const cjk = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u.test(name);
+    const cjk = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u.test(name);
     const compactName = name.replaceAll(" ", "");
     const pattern = cjk ? null : new RegExp("(?:^| )" + name + "(?: |$)");
     const hasName = (value, index) => cjk ? compactLines[index].includes(compactName) : pattern.test(value);
@@ -534,7 +544,7 @@ async function readPrintedDetails(canvas, language, cards) {
       ? text.replace(/\b(\d{2})[^\S\r\n]+(\d{2})(?=\s*\/\s*\d{2}\b)/g, "$1$2")
       : text;
     const numbers = [...numberText.matchAll(/\b([A-Z]{0,4}\d{1,4}[A-Z]?)\s*\/\s*(\d{2,4})\b/gi)];
-    if (language === "ja") {
+    if (["ja", "ko"].includes(language)) {
       for (const [full, number, code] of text.matchAll(/\b(\d{1,4})\s*\/\s*([A-Z]{1,4}\s*[-–−]\s*P|PLAY|P|J|T)\b/gi)) {
         numbers.push([full, number, code.replace(/[–−]/g, "-").replace(/\s/g, "").toUpperCase()]);
       }
@@ -1348,7 +1358,7 @@ function collectionEntry(card, language, variant, qty) {
   return {
     key: language + "/" + card.id + "/" + variant,
     language, id: card.id, name: card.name, set: card.set?.name || "", setId: cardSetId(card),
-    localId: card.localId, image: card.image, printedNumber: card.printedNumber, pokedexNumber: card.pokedexNumber,
+    localId: card.localId, image: card.image, setLogo: card.set?.logo, printedNumber: card.printedNumber, pokedexNumber: card.pokedexNumber,
     variant, qty
   };
 }
@@ -1378,7 +1388,7 @@ async function loadBulkSets() {
         if (!references.length) throw error;
         return references;
       }),
-      language === "zh-cn" ? [] : api(language, "/sets").catch(() => [])
+      ["zh-cn", "ko"].includes(language) ? [] : api(language, "/sets").catch(() => [])
     ]);
     if (request !== bulkRequest) return;
     const byId = new Map(sets.map(set => [set.id, set]));
@@ -1482,6 +1492,17 @@ let setCovers;
 
 async function appendSetCover(summary, card) {
   const language = card.language === "de" ? "en" : card.language;
+  if (language === "ko") {
+    const logo = card.setLogo || (await catalogue("ko").catch(() => [])).find(entry => entry.id === card.id)?.set.logo;
+    if (!summary.isConnected || !logo?.startsWith("https://cards.image.pokemonkorea.co.kr/")) return;
+    const image = element("img");
+    image.alt = "";
+    image.loading = "lazy";
+    image.addEventListener("error", () => image.remove(), { once: true });
+    image.src = logo;
+    summary.prepend(image);
+    return;
+  }
   if (!["ja", "en", "zh-cn"].includes(language)) return;
   setCovers ??= fetch("visual/set-covers.json?v=2").then(response => {
     if (!response.ok) throw new Error("Set covers unavailable");
@@ -1664,7 +1685,7 @@ $("vault-file").addEventListener("change", async event => {
       if (keys.has(key)) throw new Error("Duplicate card");
       keys.add(key);
       const copy = { key, language: card.language, id: card.id, name: card.name, localId: card.localId, variant: card.variant, qty: card.qty };
-      for (const field of ["set", "setId", "image", "printedNumber", "pokedexNumber"]) {
+      for (const field of ["set", "setId", "setLogo", "image", "printedNumber", "pokedexNumber"]) {
         if (typeof card[field] === "string" && card[field].length <= 1000) copy[field] = card[field];
       }
       const link = typeof card.cardmarketUrl === "string" && cardmarketProductUrl(card.cardmarketUrl);

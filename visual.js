@@ -224,7 +224,7 @@ const visualSearch = (() => {
   }
 
   async function search(image, language, cards) {
-    const indexLanguage = ["de", "ja", "zh-tw", "zh-cn"].includes(language) ? language : "en";
+    const indexLanguage = ["de", "ja", "ko", "zh-tw", "zh-cn"].includes(language) ? language : "en";
     const sourceLanguages = indexLanguage === "de" ? ["de", "en"] : [indexLanguage];
     const available = new Map(cards.map(card => [card.id, card]));
     const queries = queryDescriptors(image);

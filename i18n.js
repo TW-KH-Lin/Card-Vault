@@ -137,6 +137,8 @@ const german = {
   "Camera permission was blocked. In Safari, open Website Settings and set Camera to Allow, then try again.": "Der Kamerazugriff wurde blockiert. Öffne in Safari die Website-Einstellungen, erlaube den Kamerazugriff und versuche es erneut.",
   "Safari could not find a camera.": "Safari konnte keine Kamera finden.",
   "Safari could not start the camera. Close other apps using it and try again.": "Safari konnte die Kamera nicht starten. Schließe andere Apps, die sie verwenden, und versuche es erneut.",
+  "Artwork matching is available for SV4M. Other Korean sets can use printed details.": "Der Bildvergleich ist für SV4M verfügbar. Für andere koreanische Sets kannst du die gedruckten Angaben verwenden.",
+  "한국어 · Korean": "한국어 · Koreanisch",
   "Phone camera": "Handykamera",
   "Live camera unavailable. Try Phone camera or Upload photo.": "Live-Kamera nicht verfügbar. Nutze Handykamera oder lade ein Foto hoch.",
   "Scan several cards in one photo": "Mehrere Karten auf einem Foto scannen",
