@@ -271,95 +271,91 @@ const visualSearch = (() => {
     return ordered.filter(match => match.distance <= ordered[0].distance + 8).slice(0, 8);
   }
 
-  function refineCardBounds(image, box) {
-    // Look for strong vertical and horizontal edges near each side of the crop.
+  function cardBoundaries(image) {
     const sample = document.createElement("canvas");
-    const pad = .10;
-    sample.width = 100;
-    sample.height = 140;
-    const left = Math.max(0, box.x - box.width * pad);
-    const top = Math.max(0, box.y - box.height * pad);
-    const w = Math.min(image.width - left, box.width * (1 + 2 * pad));
-    const h = Math.min(image.height - top, box.height * (1 + 2 * pad));
+    const scale = 260 / Math.max(image.width, image.height);
+    const w = sample.width = Math.round(image.width * scale);
+    const h = sample.height = Math.round(image.height * scale);
+    if (w < 40 || h < 40) return [];
     const context = sample.getContext("2d", { willReadFrequently: true });
-    context.drawImage(image, left, top, w, h, 0, 0, 100, 140);
-    const { data } = context.getImageData(0, 0, 100, 140);
-    const grey = (x, y) => {
-      const index = (y * 100 + x) * 4;
-      return (data[index] + 2 * data[index + 1] + data[index + 2]) / 4;
-    };
-    function edge(expected, length, across, gradient) {
-      let best = Math.max(0, Math.min(length - 1, expected));
-      let score = 12;
-      for (let position = Math.max(1, Math.round(expected - length * .15));
-        position < Math.min(length - 1, expected + length * .15); position++) {
-        let strength = 0;
-        let count = 0;
-        for (let cross = Math.round(across * .23); cross < across * .77; cross++) {
-          strength += gradient(position, cross);
-          count++;
-        }
-        strength = strength / count - Math.abs(position - expected) * .35;
-        if (strength > score) { best = position; score = strength; }
-      }
-      return best;
+    context.drawImage(image, 0, 0, w, h);
+    const { data } = context.getImageData(0, 0, w, h);
+    function gradient(a, b) {
+      return (Math.abs(data[a] - data[b]) + Math.abs(data[a + 1] - data[b + 1]) +
+        Math.abs(data[a + 2] - data[b + 2])) / 3;
     }
-    const xEdge = x => edge((x - left) * 100 / w, 100, 140, (x, y) => Math.abs(grey(x + 1, y) - grey(x - 1, y)));
-    const yEdge = y => edge((y - top) * 140 / h, 140, 100, (y, x) => Math.abs(grey(x, y + 1) - grey(x, y - 1)));
-    const x0 = xEdge(box.x), x1 = xEdge(box.x + box.width);
-    const y0 = yEdge(box.y), y1 = yEdge(box.y + box.height);
-    const result = { x: left + x0 * w / 100, y: top + y0 * h / 140,
-      width: (x1 - x0) * w / 100, height: (y1 - y0) * h / 140 };
-    return Math.abs(result.width / result.height - ratio) < .17 ? result : box;
+    const vertical = new Float32Array(w);
+    const horizontal = new Float32Array(h);
+    const xLines = Array.from({ length: w }, () => new Float32Array(h + 1));
+    const yLines = Array.from({ length: h }, () => new Float32Array(w + 1));
+    for (let x = 1; x < w - 1; x++) {
+      for (let y = 1; y < h - 1; y++) {
+        const i = (y * w + x) * 4;
+        const dx = gradient(i - 4, i + 4);
+        const dy = gradient(i - 4 * w, i + 4 * w);
+        xLines[x][y + 1] = xLines[x][y] + (dx > dy ? Math.min(dx, 75) : 0);
+        yLines[y][x + 1] = yLines[y][x] + (dy > dx ? Math.min(dy, 75) : 0);
+      }
+    }
+    for (let x = 1; x < w - 1; x++) vertical[x] = xLines[x][h - 1] / h;
+    for (let y = 1; y < h - 1; y++) horizontal[y] = yLines[y][w - 1] / w;
+    const xs = peaks(vertical);
+    const ys = peaks(horizontal);
+    const boxes = [];
+    for (const left of xs) for (const right of xs) {
+      const width = right - left;
+      if (width < w * .12 || left < 1 || right >= w - 1) continue;
+      for (const top of ys) for (const bottom of ys) {
+        const height = bottom - top;
+        if (height < h * .12 || top < 1 || bottom >= h - 1 || Math.abs(width / height - ratio) > .11) continue;
+        const x1 = left + Math.round(width * .12), x2 = right - Math.round(width * .12);
+        const y1 = top + Math.round(height * .12), y2 = bottom - Math.round(height * .12);
+        const strengths = [
+          (xLines[left][y2] - xLines[left][y1]) / (y2 - y1),
+          (xLines[right][y2] - xLines[right][y1]) / (y2 - y1),
+          (yLines[top][x2] - yLines[top][x1]) / (x2 - x1),
+          (yLines[bottom][x2] - yLines[bottom][x1]) / (x2 - x1)
+        ];
+        if (Math.min(...strengths) < 6) continue;
+        const score = strengths.reduce((sum, n) => sum + n, 0) + Math.min(...strengths) * 4 -
+          Math.abs(width / height - ratio) * 100;
+        boxes.push({ x: left / scale, y: top / scale, width: width / scale, height: height / scale, score });
+      }
+    }
+    return boxes.sort((a, b) => b.score - a.score);
+  }
+
+  function overlap(a, b) {
+    const width = Math.max(0, Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x));
+    const height = Math.max(0, Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y));
+    return width * height / Math.min(a.width * a.height, b.width * b.height);
+  }
+
+  function crop(image, box) {
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(box.width);
+    canvas.height = Math.round(box.height);
+    canvas.getContext("2d").drawImage(image, box.x, box.y, box.width, box.height, 0, 0, canvas.width, canvas.height);
+    return canvas;
   }
 
   async function group(image, language, cards, current) {
-    const layouts = [[2, 2, .12, .10], [2, 2, .05, .05], [2, 2, 0, 0], [2, 1, 0, 0], [1, 2, 0, 0], [3, 1, 0, 0], [1, 3, 0, 0]];
-    let best = [];
-    let bestScore = 0;
-    for (const [columns, rows, insetX, insetY] of layouts) {
+    const boundaries = cardBoundaries(image);
+    const detected = [];
+    let attempted = 0;
+    for (const bounds of boundaries) {
       if (!current()) return [];
-      const cells = [];
-      const width = image.width * (1 - 2 * insetX) / columns;
-      const height = image.height * (1 - 2 * insetY) / rows;
-      if (width / height < .35 || width / height > 1.2) continue;
-      for (let row = 0; row < rows; row++) {
-        for (let column = 0; column < columns; column++) {
-          const canvas = document.createElement("canvas");
-          canvas.width = Math.round(width);
-          canvas.height = Math.round(height);
-          canvas.getContext("2d").drawImage(image, image.width * insetX + column * width, image.height * insetY + row * height, width, height,
-            0, 0, canvas.width, canvas.height);
-          const bounds = { x: image.width * insetX + column * width, y: image.height * insetY + row * height, width, height };
-          const match = await search(canvas, language, cards);
-          let matches = match.filter(item => item.distance <= 24);
-          if (!matches.length && columns === 2 && rows === 2 && insetX) {
-            const centered = document.createElement("canvas");
-            centered.width = Math.round(width * .9);
-            centered.height = Math.round(centered.width / ratio);
-            const x = image.width * insetX + column * width + width * .05;
-            const y = image.height * insetY + row * height + (height - centered.height) / 2 - height * .07;
-            centered.getContext("2d").drawImage(image, x, y, centered.width, centered.height,
-              0, 0, centered.width, centered.height);
-            matches = (await search(centered, language, cards)).filter(item => item.distance <= 24);
-            if (matches.length) {
-              cells.push({ canvas: centered, matches, bounds: { x, y, width: centered.width, height: centered.height } });
-              continue;
-            }
-          }
-          cells.push({ canvas, matches, bounds });
-        }
-      }
-      const hits = cells.filter(cell => cell.matches.length);
-      const score = hits.reduce((sum, cell) => sum + 29 - cell.matches[0].distance, 0) - (cells.length - hits.length) * 10;
-      if (hits.length >= 2 && score > bestScore) {
-        best = cells;
-        bestScore = score;
-      }
+      if (detected.some(cell => overlap(cell.bounds, bounds) > .25)) continue;
+      if (++attempted > 26 || detected.length >= 12) break;
+      const canvas = crop(image, bounds);
+      const matches = (await search(canvas, language, cards)).filter(item => item.distance <= 24);
+      if (matches.length) detected.push({ canvas, bounds, matches });
     }
-    return best.map(cell => ({
-      ...cell, bounds: refineCardBounds(image, cell.bounds)
-    }));
+    return detected.sort((a, b) => {
+      const row = a.bounds.y - b.bounds.y;
+      return Math.abs(row) < Math.min(a.bounds.height, b.bounds.height) * .35 ? a.bounds.x - b.bounds.x : row;
+    });
+
   }
 
   return { search, group };
