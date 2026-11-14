@@ -271,5 +271,51 @@ const visualSearch = (() => {
     return ordered.filter(match => match.distance <= ordered[0].distance + 8).slice(0, 8);
   }
 
-  return { search };
+  async function group(image, language, cards, current) {
+    const layouts = [[2, 2, .12, .10], [2, 2, .05, .05], [2, 2, 0, 0], [2, 1, 0, 0], [1, 2, 0, 0], [3, 1, 0, 0], [1, 3, 0, 0]];
+    let best = [];
+    let bestScore = 0;
+    for (const [columns, rows, insetX, insetY] of layouts) {
+      if (!current()) return [];
+      const cells = [];
+      const width = image.width * (1 - 2 * insetX) / columns;
+      const height = image.height * (1 - 2 * insetY) / rows;
+      if (width / height < .35 || width / height > 1.2) continue;
+      for (let row = 0; row < rows; row++) {
+        for (let column = 0; column < columns; column++) {
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.round(width);
+          canvas.height = Math.round(height);
+          canvas.getContext("2d").drawImage(image, image.width * insetX + column * width, image.height * insetY + row * height, width, height,
+            0, 0, canvas.width, canvas.height);
+          const match = await search(canvas, language, cards);
+          let matches = match.filter(item => item.distance <= 24);
+          if (!matches.length && columns === 2 && rows === 2 && insetX) {
+            const centered = document.createElement("canvas");
+            centered.width = Math.round(width * .9);
+            centered.height = Math.round(centered.width / ratio);
+            const x = image.width * insetX + column * width + width * .05;
+            const y = image.height * insetY + row * height + (height - centered.height) / 2 - height * .07;
+            centered.getContext("2d").drawImage(image, x, y, centered.width, centered.height,
+              0, 0, centered.width, centered.height);
+            matches = (await search(centered, language, cards)).filter(item => item.distance <= 24);
+            if (matches.length) {
+              cells.push({ canvas: centered, matches });
+              continue;
+            }
+          }
+          cells.push({ canvas, matches });
+        }
+      }
+      const hits = cells.filter(cell => cell.matches.length);
+      const score = hits.reduce((sum, cell) => sum + 29 - cell.matches[0].distance, 0) - (cells.length - hits.length) * 10;
+      if (hits.length >= 2 && score > bestScore) {
+        best = cells;
+        bestScore = score;
+      }
+    }
+    return best;
+  }
+
+  return { search, group };
 })();

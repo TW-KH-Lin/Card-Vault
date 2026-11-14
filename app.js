@@ -347,6 +347,11 @@ function stopCamera() {
   $("photo").hidden = !photoUrl;
 }
 
+$("native-camera").addEventListener("click", () => {
+  stopCamera();
+  $("native").click();
+});
+
 $("camera").addEventListener("click", async () => {
   if (!navigator.mediaDevices?.getUserMedia) {
     $("native").click();
@@ -365,19 +370,24 @@ $("camera").addEventListener("click", async () => {
     $("video").hidden = false;
     await $("video").play();
     if (request !== cameraRequest) return;
-    $("capture").hidden = $("stop").hidden = $("guide").hidden = false;
+    $("capture").hidden = $("stop").hidden = false;
+    $("guide").hidden = $("group-photo").checked;
     $("camera").hidden = $("placeholder").hidden = $("photo").hidden = true;
     status(t("Align the full front of the card inside the guide, then take a photo."));
   } catch {
     if (request === cameraRequest) {
       stopCamera();
-      status(t("Camera access failed. Try allowing access in your browser, or upload a photo."));
+      scanStatus(t("Live camera unavailable. Try Phone camera or Upload photo."));
     }
   } finally {
     $("camera").disabled = false;
   }
 });
 
+$("group-photo").addEventListener("change", () => {
+  if (stream) $("guide").hidden = $("group-photo").checked;
+  $("viewfinder").classList.toggle("group-viewfinder", $("group-photo").checked);
+});
 $("stop").addEventListener("click", stopCamera);
 const scanPanel = $("scan-title").closest("details");
 const lookupPanel = $("lookup-title").closest("details");
@@ -391,8 +401,8 @@ $("capture").addEventListener("click", () => {
   const view = video.getBoundingClientRect();
   const guide = $("guide").getBoundingClientRect();
   const zoom = Math.max(view.width / video.videoWidth, view.height / video.videoHeight);
-  const sourceWidth = guide.width / zoom;
-  const sourceHeight = guide.height / zoom;
+  const sourceWidth = $("group-photo").checked ? video.videoWidth : guide.width / zoom;
+  const sourceHeight = $("group-photo").checked ? video.videoHeight : guide.height / zoom;
   const canvas = document.createElement("canvas");
   canvas.width = Math.round(sourceWidth);
   canvas.height = Math.round(sourceHeight);
@@ -635,6 +645,7 @@ async function scan(blob) {
   cropCanvas.hidden = true;
   cropButton.hidden = true;
   sourcePhoto = null;
+  $("group-results").replaceChildren();
   if (photoUrl) URL.revokeObjectURL(photoUrl);
   photoUrl = URL.createObjectURL(blob);
   const photo = $("photo");
@@ -651,9 +662,36 @@ async function scan(blob) {
     canvas.getContext("2d").drawImage(photo, 0, 0, canvas.width, canvas.height);
     sourcePhoto = canvas;
     cropButton.hidden = false;
-    await scanPhoto(canvas);
+    if ($("group-photo").checked) await scanGroup(canvas, request);
+    else await scanPhoto(canvas);
   } catch {
     if (request === active) scanStatus(t("The photo could not be read or the catalogue did not respond. Try again or search manually."));
+  }
+}
+
+async function scanGroup(canvas, request) {
+  const language = $("language").value;
+  const group = $("group-results");
+  showMatches([], language, t("Comparing card artwork. The first scan may take a moment…"));
+  scanStatus(t("Finding cards in the photo…"));
+  const cards = (await catalogue(language).catch(() => referencesFor(language)))
+    .filter(card => !card.image?.includes("/tcgp/"));
+  const results = await visualSearch.group(canvas, language, cards, () => request === active);
+  if (request !== active) return;
+  if (!results.length) {
+    scanStatus(t("No group match. Space the cards apart or use Select a card in the photo."));
+    return;
+  }
+  scanStatus(t("Select each photographed card to check its printing."));
+  for (const [index, result] of results.entries()) {
+    const button = element("button", t("Card {number}", { number: index + 1 }));
+    const thumbnail = element("img");
+    thumbnail.alt = "";
+    thumbnail.src = result.canvas.toDataURL("image/jpeg", .7);
+    button.prepend(thumbnail);
+    button.append(element("span", result.matches[0]?.card.name || t("No match found")));
+    button.addEventListener("click", () => scanPhoto(result.canvas));
+    group.append(button);
   }
 }
 

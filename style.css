@@ -96,3 +96,9 @@
 .collection-set > summary img{width:clamp(72px,20vw,132px);height:58px;object-fit:contain}
 .collection-set > summary small{display:block;color:var(--muted);margin-top:4px;font-weight:400}
 .collection-set > .collection-row:first-of-type{margin-top:8px}
+.group-photo-option{display:flex;gap:8px;align-items:center;margin:10px 0}
+.group-photo-option input{width:20px;min-height:20px}
+#group-results:not(:empty){display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:10px}
+#group-results button{flex-direction:column;text-align:center;overflow-wrap:anywhere}
+#group-results img{width:100%;height:90px;object-fit:contain}
+.viewfinder.group-viewfinder video{object-fit:contain}
