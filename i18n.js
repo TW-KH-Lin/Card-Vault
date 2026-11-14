@@ -142,7 +142,7 @@ const german = {
   "Scan several cards in one photo": "Mehrere Karten auf einem Foto scannen",
   "Finding cards in the photo…": "Karten im Foto werden gesucht…",
   "No group match. Space the cards apart or use Select a card in the photo.": "Keine Gruppe erkannt. Lege die Karten mit Abstand aus oder wähle eine Karte im Foto aus.",
-  "Select each photographed card to check its printing.": "Wähle jede fotografierte Karte aus, um ihre Ausgabe zu prüfen.",
+  "Tap a card outline to see possible matches.": "Tippe auf einen Kartenrahmen, um mögliche Treffer zu sehen.",
   "Card {number}": "Karte {number}",
   "No match found": "Kein Treffer",
   "Select a card in the photo": "Karte im Foto auswählen",

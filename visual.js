@@ -271,6 +271,48 @@ const visualSearch = (() => {
     return ordered.filter(match => match.distance <= ordered[0].distance + 8).slice(0, 8);
   }
 
+  function refineCardBounds(image, box) {
+    // Look for strong vertical and horizontal edges near each side of the crop.
+    const sample = document.createElement("canvas");
+    const pad = .10;
+    sample.width = 100;
+    sample.height = 140;
+    const left = Math.max(0, box.x - box.width * pad);
+    const top = Math.max(0, box.y - box.height * pad);
+    const w = Math.min(image.width - left, box.width * (1 + 2 * pad));
+    const h = Math.min(image.height - top, box.height * (1 + 2 * pad));
+    const context = sample.getContext("2d", { willReadFrequently: true });
+    context.drawImage(image, left, top, w, h, 0, 0, 100, 140);
+    const { data } = context.getImageData(0, 0, 100, 140);
+    const grey = (x, y) => {
+      const index = (y * 100 + x) * 4;
+      return (data[index] + 2 * data[index + 1] + data[index + 2]) / 4;
+    };
+    function edge(expected, length, across, gradient) {
+      let best = Math.max(0, Math.min(length - 1, expected));
+      let score = 12;
+      for (let position = Math.max(1, Math.round(expected - length * .15));
+        position < Math.min(length - 1, expected + length * .15); position++) {
+        let strength = 0;
+        let count = 0;
+        for (let cross = Math.round(across * .23); cross < across * .77; cross++) {
+          strength += gradient(position, cross);
+          count++;
+        }
+        strength = strength / count - Math.abs(position - expected) * .35;
+        if (strength > score) { best = position; score = strength; }
+      }
+      return best;
+    }
+    const xEdge = x => edge((x - left) * 100 / w, 100, 140, (x, y) => Math.abs(grey(x + 1, y) - grey(x - 1, y)));
+    const yEdge = y => edge((y - top) * 140 / h, 140, 100, (y, x) => Math.abs(grey(x, y + 1) - grey(x, y - 1)));
+    const x0 = xEdge(box.x), x1 = xEdge(box.x + box.width);
+    const y0 = yEdge(box.y), y1 = yEdge(box.y + box.height);
+    const result = { x: left + x0 * w / 100, y: top + y0 * h / 140,
+      width: (x1 - x0) * w / 100, height: (y1 - y0) * h / 140 };
+    return Math.abs(result.width / result.height - ratio) < .17 ? result : box;
+  }
+
   async function group(image, language, cards, current) {
     const layouts = [[2, 2, .12, .10], [2, 2, .05, .05], [2, 2, 0, 0], [2, 1, 0, 0], [1, 2, 0, 0], [3, 1, 0, 0], [1, 3, 0, 0]];
     let best = [];
@@ -288,6 +330,7 @@ const visualSearch = (() => {
           canvas.height = Math.round(height);
           canvas.getContext("2d").drawImage(image, image.width * insetX + column * width, image.height * insetY + row * height, width, height,
             0, 0, canvas.width, canvas.height);
+          const bounds = { x: image.width * insetX + column * width, y: image.height * insetY + row * height, width, height };
           const match = await search(canvas, language, cards);
           let matches = match.filter(item => item.distance <= 24);
           if (!matches.length && columns === 2 && rows === 2 && insetX) {
@@ -300,11 +343,11 @@ const visualSearch = (() => {
               0, 0, centered.width, centered.height);
             matches = (await search(centered, language, cards)).filter(item => item.distance <= 24);
             if (matches.length) {
-              cells.push({ canvas: centered, matches });
+              cells.push({ canvas: centered, matches, bounds: { x, y, width: centered.width, height: centered.height } });
               continue;
             }
           }
-          cells.push({ canvas, matches });
+          cells.push({ canvas, matches, bounds });
         }
       }
       const hits = cells.filter(cell => cell.matches.length);
@@ -314,7 +357,9 @@ const visualSearch = (() => {
         bestScore = score;
       }
     }
-    return best;
+    return best.map(cell => ({
+      ...cell, bounds: refineCardBounds(image, cell.bounds)
+    }));
   }
 
   return { search, group };

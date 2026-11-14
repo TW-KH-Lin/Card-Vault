@@ -705,20 +705,35 @@ async function scanGroup(canvas, request) {
     scanStatus(t("No group match. Space the cards apart or use Select a card in the photo."));
     return;
   }
-  scanStatus(t("Select each photographed card to check its printing."));
+  scanStatus(t("Tap a card outline to see possible matches."));
+  const photo = element("div", "", "group-photo-map");
+  const preview = element("img");
+  preview.src = photoUrl;
+  preview.alt = t("Your card photo");
+  photo.append(preview);
+  const candidates = element("p", "", "hint");
+  group.append(photo, candidates);
   for (const [index, result] of results.entries()) {
-    const button = element("button", t("Card {number}", { number: index + 1 }));
-    const thumbnail = element("img");
-    thumbnail.alt = "";
-    thumbnail.src = result.canvas.toDataURL("image/jpeg", .7);
-    button.prepend(thumbnail);
-    button.append(element("span", result.matches[0]?.card.name || t("No match found")));
-    button.addEventListener("click", () => scanPhoto(result.canvas));
-    group.append(button);
+    const label = t("Card {number}", { number: index + 1 });
+    const button = element("button", String(index + 1), "card-outline");
+    button.type = "button";
+    button.setAttribute("aria-label", label + (result.matches.length ? " · " + result.matches[0].card.name : ""));
+    button.setAttribute("aria-pressed", "false");
+    const { x, y, width, height } = result.bounds;
+    Object.assign(button.style, {
+      left: x / canvas.width * 100 + "%", top: y / canvas.height * 100 + "%",
+      width: width / canvas.width * 100 + "%", height: height / canvas.height * 100 + "%"
+    });
+    button.addEventListener("click", () => {
+      for (const other of photo.querySelectorAll("button")) other.setAttribute("aria-pressed", String(other === button));
+      candidates.textContent = label;
+      scanPhoto(result.canvas, true);
+    });
+    photo.append(button);
   }
 }
 
-async function scanPhoto(canvas) {
+async function scanPhoto(canvas, fromGroup = false) {
   const request = ++active;
   const language = $("language").value;
   const comparing = t("Comparing card artwork. The first scan may take a moment…");
@@ -741,7 +756,7 @@ async function scanPhoto(canvas) {
       ? t("Several foil versions share this artwork. Compare the full number printed on your card.")
       : t("Compare the card images and collector numbers, then choose a printing."));
     lookupPanel.open = true;
-    if (matchMedia("(max-width: 680px)").matches) $("lookup-title").scrollIntoView({ block: "start" });
+    if (fromGroup || matchMedia("(max-width: 680px)").matches) $("lookup-title").scrollIntoView({ block: "start" });
   } catch {
     if (request === active) scanStatus(t("The photo could not be read or the catalogue did not respond. Try again or search manually."));
   }
