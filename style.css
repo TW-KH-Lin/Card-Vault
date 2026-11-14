@@ -93,6 +93,6 @@
 .collection-set > summary{display:flex;align-items:center;gap:10px;cursor:pointer;font-weight:750}
 .collection-set > summary::after{content:"▾";margin-left:auto;color:var(--accent)}
 .collection-set[open] > summary::after{content:"▴"}
-.collection-set > summary img{width:40px;height:56px;object-fit:contain}
+.collection-set > summary img{width:clamp(72px,20vw,132px);height:58px;object-fit:contain}
 .collection-set > summary small{display:block;color:var(--muted);margin-top:4px;font-weight:400}
 .collection-set > .collection-row:first-of-type{margin-top:8px}

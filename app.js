@@ -1370,6 +1370,36 @@ $("bulk-form").addEventListener("submit", event => {
 
 const openCollectionSets = new Set();
 
+let setCovers;
+
+async function appendSetCover(summary, card) {
+  const language = card.language === "de" ? "en" : card.language;
+  if (language !== "ja" && language !== "en") return;
+  setCovers ??= fetch("visual/set-covers.json").then(response => {
+    if (!response.ok) throw new Error("Set covers unavailable");
+    return response.json();
+  }).catch(() => {
+    setCovers = null;
+    return {};
+  });
+  const covers = (await setCovers)[language];
+  const name = (card.set || "").replace(/^\d{4} /, "").normalize("NFKC").toLowerCase()
+    .replace(/[^\p{L}\p{N}]/gu, "");
+  const urls = covers?.[name] || covers?.[cardSetId(card).toLowerCase()];
+  if (!urls?.length || !summary.isConnected) return;
+  const cover = element("img");
+  cover.alt = "";
+  cover.loading = "lazy";
+  let next = 0;
+  const load = () => {
+    if (next < urls.length) cover.src = urls[next++];
+    else cover.remove();
+  };
+  cover.addEventListener("error", load);
+  summary.prepend(cover);
+  load();
+}
+
 function renderCollection() {
   const list = $("collection");
   clearSummaries(list);
@@ -1393,9 +1423,7 @@ function renderCollection() {
       else openCollectionSets.delete(stateKey);
     });
     const summary = element("summary");
-    const coverCard = items.find(item => item.image);
-    const cover = coverCard && image(coverCard);
-    if (cover) { cover.alt = ""; cover.loading = "lazy"; summary.append(cover); }
+    appendSetCover(summary, items[0]);
     const heading = element("span", cardSetLabel(items[0]));
     const count = items.reduce((sum, item) => sum + item.qty, 0);
     heading.append(element("small", items[0].language.toUpperCase() + " · " + t(count === 1 ? "{count} CARD" : "{count} CARDS", { count })));
