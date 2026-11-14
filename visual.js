@@ -442,7 +442,81 @@ const visualSearch = (() => {
     return candidates.sort((a, b) => b.score - a.score);
   }
 
+  function coloredBackgroundCards(image) {
+    const sample = document.createElement("canvas");
+    const scale = 360 / Math.max(image.width, image.height);
+    const w = sample.width = Math.round(image.width * scale);
+    const h = sample.height = Math.round(image.height * scale);
+    if (w < 30 || h < 30) return [];
+    const context = sample.getContext("2d", { willReadFrequently: true });
+    context.drawImage(image, 0, 0, w, h);
+    const { data } = context.getImageData(0, 0, w, h);
+    const color = i => {
+      const r = data[i * 4], g = data[i * 4 + 1], b = data[i * 4 + 2];
+      const sum = Math.max(1, r + g + b);
+      return [r / sum, g / sum];
+    };
+    const border = [];
+    for (let x = 0; x < w; x += 4) border.push(color(w + x), color((h - 2) * w + x));
+    for (let y = 0; y < h; y += 4) border.push(color(y * w + 1), color(y * w + w - 2));
+    const median = channel => border.map(point => point[channel]).sort((a, b) => a - b)[border.length >> 1];
+    const red = median(0), green = median(1), blue = 1 - red - green;
+    if (Math.max(red, green, blue) - Math.min(red, green, blue) < .10) return [];
+    const different = ([r, g]) => Math.max(Math.abs(r - red), Math.abs(g - green), Math.abs(r + g - red - green)) > .10;
+    if (border.filter(different).length > border.length * .2) return [];
+    const mask = Uint8Array.from({ length: w * h }, (_, i) => Number(different(color(i))));
+    const queue = new Int32Array(mask.length);
+    const cards = [];
+    for (let start = 0; start < mask.length; start++) {
+      if (!mask[start]) continue;
+      let size = 1;
+      queue[0] = start;
+      mask[start] = 0;
+      for (let at = 0; at < size; at++) {
+        const i = queue[at], x = i % w;
+        for (const next of [x ? i - 1 : -1, x < w - 1 ? i + 1 : -1, i - w, i + w]) {
+          if (!mask[next]) continue;
+          mask[next] = 0;
+          queue[size++] = next;
+        }
+      }
+      if (size < w * h * .008 || size > w * h * .35) continue;
+      let best;
+      for (let degrees = -30; degrees <= 30; degrees += 2) {
+        const angle = degrees * Math.PI / 180;
+        const cos = Math.cos(angle), sin = Math.sin(angle);
+        let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
+        for (let at = 0; at < size; at++) {
+          const x = queue[at] % w, y = Math.floor(queue[at] / w);
+          const u = x * cos + y * sin, v = -x * sin + y * cos;
+          left = Math.min(left, u); right = Math.max(right, u);
+          top = Math.min(top, v); bottom = Math.max(bottom, v);
+        }
+        const width = right - left + 1, height = bottom - top + 1;
+        const area = width * height;
+        if (best && area >= best.area) continue;
+        const u = (left + right) / 2, v = (top + bottom) / 2;
+        best = { area, angle, width: width / scale, height: height / scale,
+          cx: (u * cos - v * sin) / scale, cy: (u * sin + v * cos) / scale };
+      }
+      const { angle, width, height, cx, cy, area } = best;
+      if (Math.abs(width / height - ratio) > .13 || size / area < .25) continue;
+      const bounds = { x: cx - width / 2, y: cy - height / 2, width, height, angle };
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(width));
+      canvas.height = Math.max(1, Math.round(height));
+      const ctx = canvas.getContext("2d");
+      ctx.translate(canvas.width / 2, canvas.height / 2);
+      ctx.rotate(-angle);
+      ctx.drawImage(image, -cx, -cy);
+      cards.push({ bounds, canvas });
+    }
+    return cards.sort((a, b) => a.bounds.y - b.bounds.y).slice(0, 12);
+  }
+
   function outlines(image) {
+    const rotated = coloredBackgroundCards(image);
+    if (rotated.length >= 2) return rotated;
     const selected = [];
     const contrast = contrastBoundaries(image);
     for (const bounds of [...contrast, ...cardBoundaries(image)]) {

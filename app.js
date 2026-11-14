@@ -720,7 +720,7 @@ function scanGroup(canvas) {
   const results = visualSearch.outlines(canvas);
   renderGroupOutlines(canvas, results);
   const request = active;
-  if (!results.length) return;
+  if (!results.length || results.some(result => result.bounds.angle !== undefined)) return;
   catalogue(language).then(cards => visualSearch.group(canvas, language, cards, () => request === active))
     .then(matches => {
       if (request !== active || matches.length !== results.length) return;
@@ -750,10 +750,10 @@ function renderGroupOutlines(canvas, results) {
     button.type = "button";
     button.setAttribute("aria-label", label);
     button.setAttribute("aria-pressed", "false");
-    const { x, y, width, height } = result.bounds;
+    const { x, y, width, height, angle = 0 } = result.bounds;
     Object.assign(button.style, {
       left: x / canvas.width * 100 + "%", top: y / canvas.height * 100 + "%",
-      width: width / canvas.width * 100 + "%", height: height / canvas.height * 100 + "%"
+      width: width / canvas.width * 100 + "%", height: height / canvas.height * 100 + "%", transform: "rotate(" + angle + "rad)"
     });
     button.addEventListener("click", () => {
       for (const other of photo.querySelectorAll("button")) other.setAttribute("aria-pressed", String(other === button));
