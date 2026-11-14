@@ -342,7 +342,7 @@ function stopCamera() {
   stream = null;
   $("video").srcObject = null;
   $("video").hidden = $("guide").hidden = $("capture").hidden = $("stop").hidden = true;
-  $("camera").hidden = false;
+  $("camera").hidden = $("camera").disabled = false;
   $("placeholder").hidden = Boolean(photoUrl);
   $("photo").hidden = !photoUrl;
 }
@@ -353,12 +353,19 @@ $("native-camera").addEventListener("click", () => {
 });
 
 $("camera").addEventListener("click", async () => {
-  if (!navigator.mediaDevices?.getUserMedia) {
+  if (matchMedia("(pointer: coarse)").matches || !navigator.mediaDevices?.getUserMedia) {
     $("native").click();
     return;
   }
   const request = ++cameraRequest;
   $("camera").disabled = true;
+  $("stop").hidden = false;
+  scanStatus(t("Opening camera…"));
+  const timeout = setTimeout(() => {
+    if (request !== cameraRequest) return;
+    stopCamera();
+    scanStatus(t("Live camera unavailable. Try Phone camera or Upload photo."));
+  }, 8000);
   try {
     const opened = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
     if (request !== cameraRequest) {
@@ -373,14 +380,15 @@ $("camera").addEventListener("click", async () => {
     $("capture").hidden = $("stop").hidden = false;
     $("guide").hidden = $("group-photo").checked;
     $("camera").hidden = $("placeholder").hidden = $("photo").hidden = true;
-    status(t("Align the full front of the card inside the guide, then take a photo."));
+    scanStatus(t("Align the full front of the card inside the guide, then take a photo."));
   } catch {
     if (request === cameraRequest) {
       stopCamera();
       scanStatus(t("Live camera unavailable. Try Phone camera or Upload photo."));
     }
   } finally {
-    $("camera").disabled = false;
+    clearTimeout(timeout);
+    if (request === cameraRequest) $("camera").disabled = false;
   }
 });
 
@@ -388,7 +396,10 @@ $("group-photo").addEventListener("change", () => {
   if (stream) $("guide").hidden = $("group-photo").checked;
   $("viewfinder").classList.toggle("group-viewfinder", $("group-photo").checked);
 });
-$("stop").addEventListener("click", stopCamera);
+$("stop").addEventListener("click", () => {
+  stopCamera();
+  $("scan-progress").hidden = true;
+});
 const scanPanel = $("scan-title").closest("details");
 const lookupPanel = $("lookup-title").closest("details");
 scanPanel.addEventListener("toggle", () => {

@@ -130,6 +130,7 @@ const german = {
   "Set the quantity for each card you own, then add them together.": "Gib die Stückzahl deiner Karten ein und füge sie gemeinsam hinzu.",
   "Enter a quantity for at least one card.": "Gib für mindestens eine Karte eine Stückzahl ein.",
   "Added {count} cards to {collection}.": "{count} Karten zu {collection} hinzugefügt.",
+  "Opening camera…": "Kamera wird geöffnet…",
   "Phone camera": "Handykamera",
   "Live camera unavailable. Try Phone camera or Upload photo.": "Live-Kamera nicht verfügbar. Nutze Handykamera oder lade ein Foto hoch.",
   "Scan several cards in one photo": "Mehrere Karten auf einem Foto scannen",
