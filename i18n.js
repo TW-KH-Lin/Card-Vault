@@ -125,6 +125,7 @@ const german = {
   "Filter cards by name or number": "Karten nach Name oder Nummer filtern",
   "Add selected cards": "Ausgewählte Karten hinzufügen",
   "Loading sets…": "Sets werden geladen…",
+  "Chinese Gem Packs": "Chinesische Gem Packs",
   "Choose a set": "Set auswählen",
   "Set the quantity for each card you own, then add them together.": "Gib die Stückzahl deiner Karten ein und füge sie gemeinsam hinzu.",
   "Enter a quantity for at least one card.": "Gib für mindestens eine Karte eine Stückzahl ein.",

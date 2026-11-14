@@ -1287,8 +1287,12 @@ async function loadBulkSets() {
       bulkSets.get(key).cards.push({ ...card, set });
     }
     bulkSet.append(new Option(t("Choose a set"), ""));
+    const gemPacks = element("optgroup");
+    gemPacks.label = t("Chinese Gem Packs");
+    if (language === "zh-cn") bulkSet.append(gemPacks);
     for (const [key, set] of [...bulkSets].sort((a, b) => a[1].name.localeCompare(b[1].name))) {
-      bulkSet.append(new Option(set.name + " · " + set.cards.length, key));
+      const group = language === "zh-cn" && /^CBB[1-7]C\//.test(key) ? gemPacks : bulkSet;
+      group.append(new Option(set.name + " · " + set.cards.length, key));
     }
     bulkStatus(t("Set the quantity for each card you own, then add them together."));
   } catch {
@@ -1374,8 +1378,8 @@ let setCovers;
 
 async function appendSetCover(summary, card) {
   const language = card.language === "de" ? "en" : card.language;
-  if (language !== "ja" && language !== "en") return;
-  setCovers ??= fetch("visual/set-covers.json").then(response => {
+  if (!["ja", "en", "zh-cn"].includes(language)) return;
+  setCovers ??= fetch("visual/set-covers.json?v=2").then(response => {
     if (!response.ok) throw new Error("Set covers unavailable");
     return response.json();
   }).catch(() => {
