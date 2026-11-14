@@ -353,41 +353,53 @@ $("native-camera").addEventListener("click", () => {
 });
 
 $("camera").addEventListener("click", async () => {
+  const video = $("video");
   if (!navigator.mediaDevices?.getUserMedia) {
-    scanStatus(t("Live camera unavailable. Try Phone camera or Upload photo."));
+    scanStatus(t("Live camera is unavailable in this browser. Open Card Vault directly in Safari."));
     return;
   }
   const request = ++cameraRequest;
   $("camera").disabled = true;
   $("stop").hidden = false;
-  scanStatus(t("Opening camera…"));
-  const timeout = setTimeout(() => {
-    if (request !== cameraRequest) return;
-    stopCamera();
-    scanStatus(t("Live camera unavailable. Try Phone camera or Upload photo."));
-  }, 8000);
+  scanStatus(t("Waiting for camera permission…"));
+  let previewTimeout;
   try {
-    const opened = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
+    const opened = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: "environment" } }, audio: false
+    });
     if (request !== cameraRequest) {
       opened.getTracks().forEach(track => track.stop());
       return;
     }
     stream = opened;
-    $("video").srcObject = stream;
-    $("video").hidden = false;
-    await $("video").play();
+    scanStatus(t("Starting camera preview…"));
+    video.muted = true;
+    video.playsInline = true;
+    $("photo").hidden = $("placeholder").hidden = true;
+    video.hidden = false;
+    video.srcObject = stream;
+    previewTimeout = setTimeout(() => {
+      if (request !== cameraRequest) return;
+      stopCamera();
+      scanStatus(t("Camera permission was granted, but the preview did not start. Try opening the camera again."));
+    }, 10000);
+    await video.play();
     if (request !== cameraRequest) return;
     $("capture").hidden = $("stop").hidden = false;
     $("guide").hidden = $("group-photo").checked;
-    $("camera").hidden = $("placeholder").hidden = $("photo").hidden = true;
+    $("camera").hidden = true;
     scanStatus(t("Align the full front of the card inside the guide, then take a photo."));
-  } catch {
-    if (request === cameraRequest) {
-      stopCamera();
-      scanStatus(t("Live camera unavailable. Try Phone camera or Upload photo."));
-    }
+  } catch (error) {
+    if (request !== cameraRequest) return;
+    stopCamera();
+    const messages = {
+      NotAllowedError: "Camera permission was blocked. In Safari, open Website Settings and set Camera to Allow, then try again.",
+      NotFoundError: "Safari could not find a camera.",
+      NotReadableError: "Safari could not start the camera. Close other apps using it and try again."
+    };
+    scanStatus(t(messages[error?.name] || "Live camera unavailable. Try Phone camera or Upload photo."));
   } finally {
-    clearTimeout(timeout);
+    clearTimeout(previewTimeout);
     if (request === cameraRequest) $("camera").disabled = false;
   }
 });
