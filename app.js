@@ -353,8 +353,8 @@ $("native-camera").addEventListener("click", () => {
 });
 
 $("camera").addEventListener("click", async () => {
-  if (matchMedia("(pointer: coarse)").matches || !navigator.mediaDevices?.getUserMedia) {
-    $("native").click();
+  if (!navigator.mediaDevices?.getUserMedia) {
+    scanStatus(t("Live camera unavailable. Try Phone camera or Upload photo."));
     return;
   }
   const request = ++cameraRequest;
