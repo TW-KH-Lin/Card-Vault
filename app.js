@@ -249,7 +249,8 @@ async function showMatches(cards, language, message) {
       if (needsReference) missing.push({ card, artwork, button });
     }
     button.append(artwork, element("strong", card.name), cardFacts(card, language, undefined, link));
-    if (card.visualMatch) button.append(element("span", t("IMAGE MATCH"), "match-method"));
+    if (card.numberMatch) button.append(element("span", t("NUMBER MATCH"), "match-method"));
+    else if (card.visualMatch) button.append(element("span", t("IMAGE MATCH"), "match-method"));
     button.addEventListener("click", () => showCard(card.id, language, undefined, true));
     tile.append(button, link);
     $("results").append(tile);
@@ -523,36 +524,54 @@ async function readSimplifiedChinese(text, numbers, cards) {
   return [];
 }
 
-async function readPrintedDetails(canvas, language, cards) {
+function printedNumbers(text, language) {
+  const normalized = language === "zh-cn"
+    ? text.replace(/\b(\d{2})[^\S\r\n]+(\d{2})(?=\s*\/\s*\d{2}\b)/g, "$1$2")
+    : text;
+  const numbers = [...normalized.matchAll(/\b([A-Z]{0,4}\d{1,4}[A-Z]?)\s*\/\s*(\d{1,4})\b/gi)];
+  if (["ja", "ko"].includes(language)) {
+    for (const [full, number, code] of normalized.matchAll(/\b(\d{1,4})\s*\/\s*([A-Z]{1,4}\s*[-–−]\s*P|PLAY|P|J|T)\b/gi)) {
+      numbers.push([full, number, code.replace(/[–−]/g, "-").replace(/\s/g, "").toUpperCase()]);
+    }
+  }
+  return numbers;
+}
+
+function exactPrintedCard(text, numbers, cards) {
+  const codes = new Set(setCodes(text));
+  const matches = cards.filter(card => numbers.some(([, number, total]) =>
+    matchNumber(card, number) && (promoSeries(total)
+      ? matchesPromoSeries(card, total)
+      : codes.has(cardSetId(card).toUpperCase()) && matchTotal(card, total))));
+  return matches.length === 1 ? matches[0] : null;
+}
+
+async function readPrintedDetails(canvas, language, cards, hasVisualMatch) {
   const tesseract = await loadOCR();
   const worker = await tesseract.createWorker(ocrLanguages[language], 1);
   try {
+    let footerText = "";
+    if (canvas.width / canvas.height < .90) {
+      const footer = document.createElement("canvas");
+      const height = Math.round(canvas.height * .18);
+      footer.width = Math.max(900, Math.min(canvas.width, 1500));
+      footer.height = Math.round(footer.width * height / canvas.width);
+      footer.getContext("2d").drawImage(canvas, 0, canvas.height - height, canvas.width, height, 0, 0, footer.width, footer.height);
+      await worker.setParameters({ tessedit_pageseg_mode: tesseract.PSM.SPARSE_TEXT });
+      footerText = (await worker.recognize(footer)).data.text.normalize("NFKC");
+      const numbers = printedNumbers(footerText, language);
+      const exact = exactPrintedCard(footerText, numbers, cards);
+      if (exact || (hasVisualMatch && numbers.length)) return { exact, matches: [], numbers };
+    }
     await worker.setParameters({ tessedit_pageseg_mode: tesseract.PSM.SPARSE_TEXT });
     const { data } = await worker.recognize(canvas);
-    let text = data.text.normalize("NFKC");
-    if (language === "zh-cn" && canvas.width / canvas.height < .82) {
-      const footer = document.createElement("canvas");
-      const height = Math.round(canvas.height * .14);
-      const width = Math.round(canvas.width * .55);
-      footer.width = 700;
-      footer.height = Math.round(700 * height / width);
-      footer.getContext("2d").drawImage(canvas, 0, canvas.height - height, width, height, 0, 0, footer.width, footer.height);
-      const footerText = (await worker.recognize(footer)).data.text.normalize("NFKC");
-      text += "\n" + footerText;
-    }
-    const numberText = language === "zh-cn" && /\bCBB[1-7]C\b/i.test(text)
-      ? text.replace(/\b(\d{2})[^\S\r\n]+(\d{2})(?=\s*\/\s*\d{2}\b)/g, "$1$2")
-      : text;
-    const numbers = [...numberText.matchAll(/\b([A-Z]{0,4}\d{1,4}[A-Z]?)\s*\/\s*(\d{2,4})\b/gi)];
-    if (["ja", "ko"].includes(language)) {
-      for (const [full, number, code] of text.matchAll(/\b(\d{1,4})\s*\/\s*([A-Z]{1,4}\s*[-–−]\s*P|PLAY|P|J|T)\b/gi)) {
-        numbers.push([full, number, code.replace(/[–−]/g, "-").replace(/\s/g, "").toUpperCase()]);
-      }
-    }
-    const matches = language === "zh-cn"
+    const text = data.text.normalize("NFKC") + "\n" + footerText;
+    const numbers = printedNumbers(text, language);
+    const exact = exactPrintedCard(text, numbers, cards);
+    const matches = exact ? [] : language === "zh-cn"
       ? await readSimplifiedChinese(text, numbers, cards)
       : readMatches(cards, text, numbers);
-    return { matches, numbers };
+    return { exact, matches, numbers };
   } finally {
     await worker.terminate();
   }
@@ -578,24 +597,30 @@ async function scanCandidates(canvas, language, request) {
   const includeGemVariants = matches => mergeReferences(matches,
     gemVariants.filter(card => !matches.some(match => match.id === card.id)));
 
-  const decisive = images[0]?.distance < 12 && (!images[1] || images[1].distance - images[0].distance > 3);
-  if (decisive && gemVariants.length < 2) return visualCards;
-
   scanStatus(visualCards.length ? t("Checking printed details to refine the image matches…") : t("Checking the printed card details…"));
   const emptyDetails = { matches: [], numbers: [] };
-  const printedDetails = readPrintedDetails(canvas, language, cards).catch(() => emptyDetails);
+  const printedDetails = readPrintedDetails(canvas, language, cards, visualCards.length > 0).catch(() => emptyDetails);
   let deadline;
-  const { matches, numbers } = await (visualCards.length
+  const { exact, matches, numbers } = await (visualCards.length
     ? Promise.race([
       printedDetails,
-      new Promise(resolve => { deadline = setTimeout(() => resolve(emptyDetails), 4000); })
+      new Promise(resolve => { deadline = setTimeout(() => resolve(emptyDetails), 8500); })
     ]).finally(() => clearTimeout(deadline))
     : printedDetails);
   if (request !== active) return [];
+  const candidates = includeGemVariants(visualCards);
+  const agreesWithNumber = card => numbers.some(([, number, total]) => matchNumber(card, number) &&
+    (promoSeries(total) ? matchesPromoSeries(card, total) : matchTotal(card, total)));
+  const numbered = candidates.filter(agreesWithNumber);
+  if (exact || numbered.length) {
+    const preferred = exact ? [exact] : numbered;
+    const ids = new Set(preferred.map(card => card.id));
+    return [...preferred.map(card => ({ ...card, numberMatch: true })),
+      ...candidates.filter(card => !ids.has(card.id))];
+  }
   const visualIds = new Set(visualCards.map(card => card.id));
   if (images.length) {
     const printedScores = new Map(matches.map(({ card, score }) => [card.id, score]));
-    const confirmedGem = matches.find(match => match.score === 420);
     const combined = visualCards.map((card, index) => ({
       card,
       rank: images[index].distance - (printedScores.get(card.id) || 0) / 60 -
@@ -604,7 +629,6 @@ async function scanCandidates(canvas, language, request) {
     })).sort((a, b) => a.rank - b.rank).map(item => item.card);
     const textOnly = matches.filter(({ card }) => !visualIds.has(card.id)).slice(0, 3).map(({ card }) => card);
     const ranked = [...combined, ...textOnly];
-    if (confirmedGem) return [confirmedGem.card, ...includeGemVariants(ranked).filter(card => card.id !== confirmedGem.card.id)];
     return includeGemVariants(ranked);
   }
   const shortlist = matches.slice(0, 12);

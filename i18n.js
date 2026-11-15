@@ -60,6 +60,7 @@ const german = {
   "Unnumbered": "Ohne Kartennummer",
   "Unknown": "Unbekannt",
   "Image unavailable": "Bild nicht verfügbar",
+  "NUMBER MATCH": "NUMMERNÜBEREINSTIMMUNG",
   "IMAGE MATCH": "BILDTREFFER",
   "English reference image": "Englisches Referenzbild",
   "English reference": "Englische Referenz",
