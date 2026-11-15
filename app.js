@@ -46,7 +46,8 @@ function image(card, quality = "low") {
   const correctedFront = /^visual\/fronts\/[A-Za-z0-9-]+\.webp$/.test(card.image);
   const deckImage = /^https:\/\/pokecardex-scans\.b-cdn\.net\/sets_jp\/(?:PESD|MCMP|MCVS5)\/\d+\.jpg$/.test(card.image);
   const koreanImage = /^https:\/\/(?:cards\.image\.pokemonkorea\.co\.kr|pokemoncard\.co\.kr)\//.test(card.image);
-  if (!koreanImage && !tcgdexImage && !vintageImage && !correctedFront && !deckImage && !referenceImages.has(card.image) && !card.image.startsWith("https://tcg.mik.moe/static/img/")) return null;
+  const officialJapaneseImage = card.image.startsWith("https://www.pokemon-card.com/assets/images/card_images/large/SMP2/");
+  if (!officialJapaneseImage && !koreanImage && !tcgdexImage && !vintageImage && !correctedFront && !deckImage && !referenceImages.has(card.image) && !card.image.startsWith("https://tcg.mik.moe/static/img/")) return null;
   const img = element("img");
   img.src = tcgdexImage ? card.image + "/" + quality + ".webp" : card.image;
   img.alt = card.name;
@@ -70,7 +71,7 @@ function mergeReferences(cards, references) {
 async function referencesFor(language) {
   const references = cardReferences[language] || [];
   if (language !== "ja") return references;
-  vintageReferences ??= fetch("visual/ja-vintage.json", { cache: "no-cache", signal: AbortSignal.timeout(12000) }).then(response => {
+  vintageReferences ??= fetch("visual/ja-vintage.json?v=11", { cache: "no-cache", signal: AbortSignal.timeout(12000) }).then(response => {
     if (!response.ok) throw new Error("Vintage catalogue unavailable");
     return response.json();
   });
@@ -214,7 +215,7 @@ function cardNumberLabel(card) {
   return "#" + card.localId + (total ? "/" + total : "");
 }
 
-const japaneseSetCode = /^(?:XY|EBB|SC|CP[1-6]|sm2\+|(?:BW|XY|SM|SV|S|M)(?:\d[\w.+]*|-[Pp]|[A-Z]{1,3}))$/;
+const japaneseSetCode = /^(?:XY|EBB|SC|CP[1-6]|sm2\+|(?:BW|XY|SM|SMP|SV|S|M)(?:\d[\w.+]*|-[Pp]|[A-Z]{1,3}))$/;
 
 function cardSetId(card) {
   return card.set?.id || card.setId || card.id.slice(0, -(String(card.localId).length + 1));
