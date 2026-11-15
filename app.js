@@ -547,26 +547,69 @@ function exactPrintedCard(text, numbers, cards) {
   return matches.length === 1 ? matches[0] : null;
 }
 
-async function readPrintedDetails(canvas, language, cards, hasVisualMatch) {
+function collectorStrip(canvas, side, highContrast, singleLine) {
+  const strip = document.createElement("canvas");
+  const width = Math.round(canvas.width * (singleLine ? .26 : .57));
+  const height = Math.round(canvas.height * (singleLine ? .045 : .12));
+  const bottom = Math.round(canvas.height * (singleLine ? .026 : 0));
+  const padding = 18;
+  strip.width = 920;
+  strip.height = Math.round((strip.width - padding * 2) * height / width) + padding * 2;
+  const ctx = strip.getContext("2d", { willReadFrequently: highContrast });
+  ctx.fillStyle = "white";
+  ctx.fillRect(0, 0, strip.width, strip.height);
+  ctx.drawImage(canvas, side === "left" ? (singleLine ? canvas.width * .10 : 0) : canvas.width - width, canvas.height - height - bottom,
+    width, height, padding, padding, strip.width - 2 * padding, strip.height - 2 * padding);
+  if (highContrast) {
+    const pixels = ctx.getImageData(0, 0, strip.width, strip.height);
+    const { data } = pixels;
+    for (let i = 0; i < data.length; i += 4) {
+      const luminance = (data[i] + 2 * data[i + 1] + data[i + 2]) / 4;
+      const gray = singleLine ? 255 - luminance : luminance;
+      data[i] = data[i + 1] = data[i + 2] = Math.max(0, Math.min(255, (gray - 45) * 1.55));
+    }
+    ctx.putImageData(pixels, 0, 0);
+  }
+  return strip;
+}
+
+async function readCollectorStrip(tesseract, canvas, language, cards, current) {
+  const worker = await tesseract.createWorker("eng", 1);
+  const leftFirst = ["ja", "ko", "zh-cn", "zh-tw"].includes(language);
+  const sides = leftFirst ? ["left", "right"] : ["right", "left"];
+  let fallback = { text: "", numbers: [] };
+  try {
+    await worker.setParameters({
+      tessedit_pageseg_mode: tesseract.PSM.SPARSE_TEXT,
+      tessedit_char_whitelist: "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz/- "
+    });
+    for (const [side, contrast, singleLine] of [[sides[0], true, true], [sides[0], false, false], [sides[1], true, false]]) {
+      if (!current()) break;
+      await worker.setParameters({ tessedit_pageseg_mode: singleLine ? tesseract.PSM.SINGLE_LINE : tesseract.PSM.SPARSE_TEXT });
+      const { data } = await worker.recognize(collectorStrip(canvas, side, contrast, singleLine));
+      const text = data.text.normalize("NFKC");
+      const numbers = printedNumbers(text, language);
+      const exact = exactPrintedCard(text, numbers, cards);
+      if (exact) return { text, numbers, exact };
+      if (numbers.length && !fallback.numbers.length) fallback = { text, numbers };
+    }
+    return fallback;
+  } finally {
+    await worker.terminate();
+  }
+}
+
+async function readPrintedDetails(canvas, language, cards, hasVisualMatch, current) {
   const tesseract = await loadOCR();
+  const footer = canvas.width / canvas.height < .90
+    ? await readCollectorStrip(tesseract, canvas, language, cards, current).catch(() => ({ text: "", numbers: [] }))
+    : { text: "", numbers: [] };
+  if (footer.exact || (hasVisualMatch && footer.numbers.length) || !current()) return { ...footer, matches: [] };
   const worker = await tesseract.createWorker(ocrLanguages[language], 1);
   try {
-    let footerText = "";
-    if (canvas.width / canvas.height < .90) {
-      const footer = document.createElement("canvas");
-      const height = Math.round(canvas.height * .18);
-      footer.width = Math.max(900, Math.min(canvas.width, 1500));
-      footer.height = Math.round(footer.width * height / canvas.width);
-      footer.getContext("2d").drawImage(canvas, 0, canvas.height - height, canvas.width, height, 0, 0, footer.width, footer.height);
-      await worker.setParameters({ tessedit_pageseg_mode: tesseract.PSM.SPARSE_TEXT });
-      footerText = (await worker.recognize(footer)).data.text.normalize("NFKC");
-      const numbers = printedNumbers(footerText, language);
-      const exact = exactPrintedCard(footerText, numbers, cards);
-      if (exact || (hasVisualMatch && numbers.length)) return { exact, matches: [], numbers };
-    }
     await worker.setParameters({ tessedit_pageseg_mode: tesseract.PSM.SPARSE_TEXT });
     const { data } = await worker.recognize(canvas);
-    const text = data.text.normalize("NFKC") + "\n" + footerText;
+    const text = data.text.normalize("NFKC") + "\n" + footer.text;
     const numbers = printedNumbers(text, language);
     const exact = exactPrintedCard(text, numbers, cards);
     const matches = exact ? [] : language === "zh-cn"
@@ -600,13 +643,14 @@ async function scanCandidates(canvas, language, request) {
 
   scanStatus(visualCards.length ? t("Checking printed details to refine the image matches…") : t("Checking the printed card details…"));
   const emptyDetails = { matches: [], numbers: [] };
-  const printedDetails = readPrintedDetails(canvas, language, cards, visualCards.length > 0).catch(() => emptyDetails);
+  let withinOcrBudget = true;
+  const printedDetails = readPrintedDetails(canvas, language, cards, visualCards.length > 0, () => request === active && withinOcrBudget).catch(() => emptyDetails);
   let deadline;
   const { exact, matches, numbers } = await (visualCards.length
     ? Promise.race([
       printedDetails,
-      new Promise(resolve => { deadline = setTimeout(() => resolve(emptyDetails), 8500); })
-    ]).finally(() => clearTimeout(deadline))
+      new Promise(resolve => { deadline = setTimeout(() => resolve(emptyDetails), 12000); })
+    ]).finally(() => { withinOcrBudget = false; clearTimeout(deadline); })
     : printedDetails);
   if (request !== active) return [];
   const candidates = includeGemVariants(visualCards);
@@ -801,6 +845,10 @@ async function scanPhoto(canvas, fromGroup = false) {
     if (request !== active) return;
     if (!candidates.length) {
       scanStatus(t("No match found. Try a straight, close photo with less glare, or search by printed details."));
+      if (fromGroup) {
+        lookupPanel.open = true;
+        $("lookup-title").scrollIntoView({ block: "start" });
+      }
       return;
     }
     $("scan-progress").hidden = true;
